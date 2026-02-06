@@ -1,0 +1,10 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Receipt photos - open access (no auth for now)
+    match /receipt-photos/{allPaths=**} {
+      allow read, write: if true;
+    }
+  }
+}

@@ -1,0 +1,15 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Receipts collection - open access (no auth for now)
+    match /receipts/{receiptId} {
+      allow read, write: if true;
+    }
+
+    // Submissions collection - open access (no auth for now)
+    match /submissions/{submissionId} {
+      allow read, write: if true;
+    }
+  }
+}
