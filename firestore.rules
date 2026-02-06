@@ -11,5 +11,15 @@ service cloud.firestore {
     match /submissions/{submissionId} {
       allow read, write: if true;
     }
+
+    // Travel expenses collection - open access (no auth for now)
+    match /travel_expenses/{expenseId} {
+      allow read, write: if true;
+    }
+
+    // Travel submissions collection - open access (no auth for now)
+    match /travel_submissions/{submissionId} {
+      allow read, write: if true;
+    }
   }
 }

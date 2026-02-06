@@ -32,7 +32,7 @@ export function TravelForm({ onSubmit, saving }: TravelFormProps) {
     await onSubmit(formData)
   }
 
-  const isValid = formData.date && formData.project_code && formData.description && (km > 0 || travelCost > 0)
+  const isValid = formData.date && formData.project_code && formData.description
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -103,7 +103,7 @@ export function TravelForm({ onSubmit, saving }: TravelFormProps) {
 
       {/* Kilometers */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Kilometers *</label>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Kilometers</label>
         <input
           type="number"
           inputMode="numeric"
@@ -113,7 +113,6 @@ export function TravelForm({ onSubmit, saving }: TravelFormProps) {
           onChange={(e) => handleChange('kilometers', e.target.value)}
           placeholder="0"
           className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-gray-900"
-          required
         />
       </div>
 

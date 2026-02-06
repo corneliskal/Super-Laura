@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, MapPin, Trash2 } from 'lucide-react'
+import { Plus, MapPin, Trash2, Send } from 'lucide-react'
 import { useTravel } from '@/hooks/useTravel'
 import { useToast } from '@/components/ui/Toast'
 import { TravelCard } from '@/components/travel/TravelCard'
@@ -43,13 +43,22 @@ export function TravelOverviewPage() {
     <div className="p-4 space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-gray-900">Reiskosten</h2>
-        <Link
-          to="/reiskosten/nieuw"
-          className="flex items-center gap-1.5 px-3 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
-        >
-          <Plus size={16} />
-          Nieuw
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            to="/reiskosten/indienen"
+            className="flex items-center gap-1.5 px-3 py-2 bg-white text-primary-600 border border-primary-200 rounded-lg text-sm font-medium hover:bg-primary-50 transition-colors"
+          >
+            <Send size={16} />
+            Indienen
+          </Link>
+          <Link
+            to="/reiskosten/nieuw"
+            className="flex items-center gap-1.5 px-3 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
+          >
+            <Plus size={16} />
+            Nieuw
+          </Link>
+        </div>
       </div>
 
       <MonthPicker month={month} year={year} onChange={handleMonthChange} />

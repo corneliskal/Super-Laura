@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Search, SlidersHorizontal } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Search, SlidersHorizontal, PlusCircle, Send } from 'lucide-react'
 import { useReceipts } from '@/hooks/useReceipts'
 import { ReceiptCard } from '@/components/receipt/ReceiptCard'
 import { MonthPicker } from '@/components/submission/MonthPicker'
@@ -41,7 +42,26 @@ export function ReceiptsOverviewPage() {
 
   return (
     <div className="p-4 space-y-4">
-      <h2 className="text-lg font-bold text-gray-900">Bonnetjes</h2>
+      {/* Header with action buttons */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-gray-900">Bonnetjes</h2>
+        <div className="flex items-center gap-2">
+          <Link
+            to="/indienen"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-primary-600 hover:bg-primary-50 transition-colors"
+          >
+            <Send size={16} />
+            Indienen
+          </Link>
+          <Link
+            to="/nieuw"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 transition-colors shadow-sm"
+          >
+            <PlusCircle size={16} />
+            Nieuw
+          </Link>
+        </div>
+      </div>
 
       {/* Month picker */}
       <MonthPicker month={month} year={year} onChange={handleMonthChange} />
