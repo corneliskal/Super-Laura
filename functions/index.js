@@ -12,7 +12,7 @@ admin.initializeApp();
  * Returns: { raw_text, confidence, parsed: { store_name, amount, vat_amount, date, description, category } }
  *
  * Deploy: firebase deploy --only functions
- * Set API key: firebase functions:config:set gemini.key="YOUR_API_KEY"
+ * Set API key: Add GEMINI_API_KEY to functions/.env
  */
 exports.analyzeReceipt = functions
   .region("europe-west1")
@@ -32,10 +32,10 @@ exports.analyzeReceipt = functions
           return;
         }
 
-        // Get Gemini API key from Firebase config
-        const apiKey = functions.config().gemini?.key;
+        // Get Gemini API key from environment variable
+        const apiKey = process.env.GEMINI_API_KEY;
         if (!apiKey) {
-          console.error("Gemini API key not configured. Run: firebase functions:config:set gemini.key=\"YOUR_KEY\"");
+          console.error("Gemini API key not configured. Add GEMINI_API_KEY to functions/.env");
           res.status(500).json({ error: "OCR not configured" });
           return;
         }

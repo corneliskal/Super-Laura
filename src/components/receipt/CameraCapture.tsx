@@ -1,5 +1,5 @@
-import { Camera, RotateCcw, Loader2 } from 'lucide-react'
-import { useImageCapture } from '@/hooks/useImageCapture'
+import { useRef } from 'react'
+import { Camera, ImagePlus, RotateCcw, Loader2 } from 'lucide-react'
 
 interface CameraCaptureProps {
   onImageCaptured: (file: File) => void
@@ -14,18 +14,20 @@ export function CameraCapture({
   onRetake,
   capturing,
 }: CameraCaptureProps) {
-  const { inputRef } = useImageCapture()
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    // Quick check: is it an image?
     if (!file.type.startsWith('image/')) {
       return
     }
 
     onImageCaptured(file)
+    // Reset input so the same file can be selected again
+    e.target.value = ''
   }
 
   if (previewUrl) {
@@ -47,40 +49,61 @@ export function CameraCapture({
     )
   }
 
+  if (capturing) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-16 px-8 bg-primary-50 border-2 border-dashed border-primary-300 rounded-2xl">
+        <Loader2 size={48} className="text-primary-500 animate-spin" />
+        <span className="text-primary-700 font-medium">Foto verwerken...</span>
+      </div>
+    )
+  }
+
   return (
-    <div className="relative">
+    <div className="space-y-3">
+      {/* Hidden file inputs */}
       <input
-        ref={inputRef}
+        ref={cameraInputRef}
         type="file"
         accept="image/*"
         capture="environment"
         onChange={handleFileChange}
         className="hidden"
-        id="camera-input"
       />
-      <label
-        htmlFor="camera-input"
-        className="flex flex-col items-center justify-center gap-4 py-16 px-8 bg-primary-50 border-2 border-dashed border-primary-300 rounded-2xl cursor-pointer hover:bg-primary-100 transition-colors"
+      <input
+        ref={galleryInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+
+      {/* Camera button */}
+      <button
+        onClick={() => cameraInputRef.current?.click()}
+        className="w-full flex flex-col items-center justify-center gap-3 py-10 px-8 bg-primary-50 border-2 border-dashed border-primary-300 rounded-2xl cursor-pointer hover:bg-primary-100 transition-colors"
       >
-        {capturing ? (
-          <>
-            <Loader2 size={48} className="text-primary-500 animate-spin" />
-            <span className="text-primary-700 font-medium">Foto verwerken...</span>
-          </>
-        ) : (
-          <>
-            <div className="w-20 h-20 bg-primary-600 rounded-full flex items-center justify-center shadow-lg">
-              <Camera size={36} className="text-white" />
-            </div>
-            <div className="text-center">
-              <p className="text-primary-700 font-semibold text-lg">Maak een foto</p>
-              <p className="text-primary-500 text-sm mt-1">
-                Fotografeer je bonnetje of factuur
-              </p>
-            </div>
-          </>
-        )}
-      </label>
+        <div className="w-16 h-16 bg-primary-600 rounded-full flex items-center justify-center shadow-lg">
+          <Camera size={30} className="text-white" />
+        </div>
+        <div className="text-center">
+          <p className="text-primary-700 font-semibold text-lg">Maak een foto</p>
+          <p className="text-primary-500 text-sm mt-0.5">Open de camera</p>
+        </div>
+      </button>
+
+      {/* Gallery button */}
+      <button
+        onClick={() => galleryInputRef.current?.click()}
+        className="w-full flex items-center justify-center gap-3 py-4 px-6 bg-white border-2 border-gray-200 rounded-2xl cursor-pointer hover:bg-gray-50 hover:border-primary-300 transition-colors"
+      >
+        <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
+          <ImagePlus size={20} className="text-primary-600" />
+        </div>
+        <div className="text-left">
+          <p className="text-gray-800 font-medium">Kies uit fotoalbum</p>
+          <p className="text-gray-400 text-xs">Upload een bestaande foto</p>
+        </div>
+      </button>
     </div>
   )
 }

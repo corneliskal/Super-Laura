@@ -64,3 +64,42 @@ export const DUTCH_MONTHS = [
   'Januari', 'Februari', 'Maart', 'April', 'Mei', 'Juni',
   'Juli', 'Augustus', 'September', 'Oktober', 'November', 'December',
 ] as const
+
+// ─── Reiskosten (Travel Expenses) ─────────────────────────────
+
+export const KM_RATE = 0.23 // EUR per km
+
+export interface TravelExpense {
+  id: string
+  date: string // YYYY-MM-DD
+  project_code: string
+  project_name: string
+  description: string
+  travel_cost: number // OV reiskosten (EUR)
+  kilometers: number
+  km_reimbursement: number // kilometers * KM_RATE
+  total_reimbursement: number // travel_cost + km_reimbursement
+  is_submitted: boolean
+  submission_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TravelExpenseFormData {
+  date: string
+  project_code: string
+  project_name: string
+  description: string
+  travel_cost: string
+  kilometers: string
+}
+
+export interface TravelSubmission {
+  id: string
+  month: number
+  year: number
+  total_amount: number
+  entry_count: number
+  status: 'draft' | 'exported' | 'sent'
+  created_at: string
+}

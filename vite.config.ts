@@ -12,8 +12,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'Super-Laura - Bonnetjes App',
-        short_name: 'Super-Laura',
+        name: 'Super Laura Companion App',
+        short_name: 'Super Laura',
         description: 'Bonnetjes fotograferen, bewaren en indienen',
         theme_color: '#7c3aed',
         background_color: '#f5f3ff',
@@ -43,7 +43,7 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/.*\.supabase\.co\/storage\/.*/i,
+            urlPattern: /^https:\/\/firebasestorage\.googleapis\.com\/.*/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'receipt-photos',

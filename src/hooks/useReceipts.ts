@@ -16,6 +16,7 @@ import {
   ref,
   uploadBytes,
   getDownloadURL,
+  getBlob,
   deleteObject,
 } from 'firebase/storage'
 import { db, storage } from '@/lib/firebase'
@@ -187,16 +188,19 @@ export function useReceipts() {
       ? `${year + 1}-01-01`
       : `${year}-${String(month + 1).padStart(2, '0')}-01`
 
+    // Fetch all receipts for this month, then filter client-side for is_submitted
+    // This avoids Firestore composite index issues with inequality + equality on different fields
     const q = query(
       collection(db, RECEIPTS_COLLECTION),
       where('receipt_date', '>=', startDate),
       where('receipt_date', '<', endDate),
-      where('is_submitted', '==', false),
       orderBy('receipt_date', 'asc')
     )
 
     const snapshot = await getDocs(q)
-    return snapshot.docs.map(docToReceipt)
+    return snapshot.docs
+      .map(docToReceipt)
+      .filter((r) => !r.is_submitted)
   }, [])
 
   const markAsSubmitted = useCallback(async (receiptIds: string[], submissionId: string) => {
@@ -247,9 +251,8 @@ export function useReceipts() {
 
   const getPhotoBlob = useCallback(async (photoPath: string): Promise<Blob> => {
     const storageRef = ref(storage, `receipt-photos/${photoPath}`)
-    const url = await getDownloadURL(storageRef)
-    const response = await fetch(url)
-    return response.blob()
+    // Use Firebase SDK's getBlob to avoid CORS issues
+    return await getBlob(storageRef)
   }, [])
 
   return {

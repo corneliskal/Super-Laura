@@ -5,7 +5,6 @@ import { useReceipts, useReceiptStats } from '@/hooks/useReceipts'
 import { ReceiptCard } from '@/components/receipt/ReceiptCard'
 import { formatEuro } from '@/lib/dateUtils'
 import { DUTCH_MONTHS } from '@/types/receipt'
-import { APP_NAME } from '@/lib/constants'
 
 export function HomePage() {
   const { receipts, fetchReceipts, loading } = useReceipts()
@@ -22,12 +21,13 @@ export function HomePage() {
 
   return (
     <div className="p-4 space-y-5">
-      {/* Welcome */}
+      {/* Logo */}
       <div className="text-center pt-2">
-        <h2 className="text-2xl font-bold text-gray-900">
-          Hoi Laura! 👋
-        </h2>
-        <p className="text-gray-500 text-sm mt-1">Welkom bij {APP_NAME}</p>
+        <img
+          src="/logo.png"
+          alt="Super-Laura"
+          className="w-28 h-28 mx-auto drop-shadow-lg"
+        />
       </div>
 
       {/* Monthly stats card */}
