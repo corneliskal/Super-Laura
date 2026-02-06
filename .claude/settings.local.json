@@ -11,7 +11,8 @@
       "Bash(npm run build:*)",
       "Bash(npm uninstall:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(npx firebase deploy:*)"
     ]
   }
 }

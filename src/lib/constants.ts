@@ -7,4 +7,4 @@ export const IMAGE_QUALITY = 0.8
 export const THUMBNAIL_SIZE = 200
 
 // Firebase Cloud Function URL for OCR
-export const OCR_FUNCTION_URL = 'https://europe-west1-the-cork-claude.cloudfunctions.net/analyzeReceipt'
+export const OCR_FUNCTION_URL = 'https://europe-west1-super-laura-fb40a.cloudfunctions.net/analyzeReceipt'

@@ -3,13 +3,13 @@ import { getFirestore } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCf49GNUSVnl5Va3waIGFU2WcZsqo8e6Z0",
-  authDomain: "the-cork-claude.firebaseapp.com",
-  projectId: "the-cork-claude",
-  storageBucket: "the-cork-claude.firebasestorage.app",
-  messagingSenderId: "315353039539",
-  appId: "1:315353039539:web:85f20655096ae78062e6c6",
-  measurementId: "G-T2WNRF19ZT"
+  apiKey: "AIzaSyC6gq486y7Y2P3QGzft8U01l5OsjGF8AKs",
+  authDomain: "super-laura-fb40a.firebaseapp.com",
+  projectId: "super-laura-fb40a",
+  storageBucket: "super-laura-fb40a.firebasestorage.app",
+  messagingSenderId: "589024283",
+  appId: "1:589024283:web:15757a92ed4ed2a36b7cbe",
+  measurementId: "G-MWP779CPGR"
 }
 
 const app = initializeApp(firebaseConfig)
