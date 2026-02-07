@@ -3,6 +3,7 @@ const admin = require("firebase-admin");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const nodemailer = require("nodemailer");
 const XLSX = require("xlsx");
+const path = require("path");
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -241,8 +242,8 @@ exports.submitReceipts = functions
           return;
         }
 
-        // Generate Excel for receipts
-        const excelBuffer = generateReceiptsExcel(receipts, month, year, monthName);
+        // Generate Excel for receipts using official template
+        const excelBuffer = generateReceiptsExcel(receipts, month, year, monthName, employeeName, BANK_ACCOUNT);
 
         // Download photos from Storage
         const photoAttachments = [];
@@ -451,136 +452,255 @@ exports.submitTravel = functions
   });
 
 // =============================================================
-// Helper: Generate receipts Excel (server-side)
+// Helper: Shift cells down in a worksheet by a number of rows
+// Moves all cells from startRow onwards down by shiftAmount rows
 // =============================================================
-function generateReceiptsExcel(receipts, month, year, monthName) {
+function shiftRowsDown(ws, startRow, shiftAmount, maxCol) {
+  if (shiftAmount <= 0) return;
+
+  // Find the actual last row in the sheet
+  const ref = ws["!ref"];
+  if (!ref) return;
+  const range = XLSX.utils.decode_range(ref);
+  const lastRow = range.e.r;
+
+  // Work from bottom up to avoid overwriting
+  for (let r = lastRow; r >= startRow; r--) {
+    for (let c = 0; c <= maxCol; c++) {
+      const srcAddr = XLSX.utils.encode_cell({ r, c });
+      const dstAddr = XLSX.utils.encode_cell({ r: r + shiftAmount, c });
+      if (ws[srcAddr]) {
+        ws[dstAddr] = ws[srcAddr];
+        delete ws[srcAddr];
+      }
+    }
+  }
+
+  // Update merges
+  if (ws["!merges"]) {
+    ws["!merges"] = ws["!merges"].map((merge) => {
+      if (merge.s.r >= startRow) {
+        return {
+          s: { r: merge.s.r + shiftAmount, c: merge.s.c },
+          e: { r: merge.e.r + shiftAmount, c: merge.e.c },
+        };
+      }
+      return merge;
+    });
+  }
+
+  // Update sheet range
+  range.e.r = Math.max(range.e.r, lastRow + shiftAmount);
+  ws["!ref"] = XLSX.utils.encode_range(range);
+}
+
+// =============================================================
+// Helper: Format a date string "YYYY-MM-DD" as "D maand"
+// =============================================================
+function formatDateDutch(dateStr) {
+  if (!dateStr) return "";
+  const parts = dateStr.split("-");
+  if (parts.length !== 3) return dateStr;
+  const monthIdx = parseInt(parts[1]) - 1;
+  return `${parseInt(parts[2])} ${DUTCH_MONTHS[monthIdx].toLowerCase()}`;
+}
+
+// =============================================================
+// Helper: Generate receipts Excel using official template
+// =============================================================
+function generateReceiptsExcel(receipts, month, year, monthName, employeeName, bankAccount) {
+  const templatePath = path.join(__dirname, "templates", "bonnetjes-template.xlsx");
+  const wb = XLSX.readFile(templatePath);
+  const ws = wb.Sheets["Blad1"];
+
   const sorted = [...receipts].sort(
     (a, b) => new Date(a.receipt_date).getTime() - new Date(b.receipt_date).getTime()
   );
 
-  const wsData = [
-    ["Bonnetjes overzicht", monthName, year],
-    [],
-    ["Datum", "Winkel", "Omschrijving", "Categorie", "Bedrag", "BTW"],
-  ];
+  // Template layout:
+  // Row 3 (idx 2): medewerker info (cell A3)
+  // Row 4 (idx 3): bank info (cell A4)
+  // Row 5 (idx 4): datum (cell A5)
+  // Rows 7-8: column headers (datum | omschrijving | totale vergoeding)
+  // Row 11-38 (idx 10-37): data rows (28 slots)
+  // Row 40 (idx 39): Subtotalen with SUM formula in C40
+  // Row 41 (idx 40): Af: evt. voorschot
+  // Row 42 (idx 41): TOTAAL
+  // Row 44+: handtekening, toelichting
 
-  for (const r of sorted) {
-    wsData.push([
-      r.receipt_date || "",
-      r.store_name || "",
-      r.description || "",
-      r.category || "",
-      r.amount || 0,
-      r.vat_amount || 0,
-    ]);
+  const DATA_START_ROW = 10;   // 0-indexed row 10 = Excel row 11
+  const TEMPLATE_DATA_SLOTS = 28;  // rows 11-38
+  const SUMMARY_START_ROW = 39; // 0-indexed row 39 = Excel row 40
+
+  // Calculate extra rows needed
+  const extraRows = Math.max(0, sorted.length - TEMPLATE_DATA_SLOTS);
+
+  // If we need more rows, shift the summary/footer section down
+  if (extraRows > 0) {
+    shiftRowsDown(ws, SUMMARY_START_ROW, extraRows, 9); // maxCol = J (index 9)
   }
 
-  wsData.push([]);
-  const total = sorted.reduce((sum, r) => sum + (r.amount || 0), 0);
-  wsData.push([null, null, null, "TOTAAL", total]);
+  const now = new Date();
+  const todayStr = `${now.getDate()} ${DUTCH_MONTHS[now.getMonth()].toLowerCase()} ${now.getFullYear()}`;
 
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
-  ws["!cols"] = [
-    { wch: 12 }, { wch: 20 }, { wch: 30 }, { wch: 18 }, { wch: 10 }, { wch: 10 },
-  ];
+  // Fill header info
+  ws["A3"] = { t: "s", v: `medewerker: ${employeeName}` };
+  ws["A4"] = { t: "s", v: `bank/giro nummer: Privé rekening- ${bankAccount}` };
+  ws["A5"] = { t: "s", v: `datum: ${todayStr}` };
 
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, `Bonnetjes ${monthName} ${year}`);
+  // Fill data rows
+  for (let i = 0; i < sorted.length; i++) {
+    const r = sorted[i];
+    const row = DATA_START_ROW + i; // 0-indexed
+
+    const dateFormatted = formatDateDutch(r.receipt_date);
+    const description = [r.store_name, r.description].filter(Boolean).join(" - ");
+
+    ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { t: "s", v: dateFormatted };
+    ws[XLSX.utils.encode_cell({ r: row, c: 1 })] = { t: "s", v: description };
+    ws[XLSX.utils.encode_cell({ r: row, c: 2 })] = { t: "n", v: r.amount || 0 };
+  }
+
+  // Update summary formulas (they may have shifted)
+  const summaryRow = SUMMARY_START_ROW + extraRows; // 0-indexed
+  const lastDataRow = DATA_START_ROW + Math.max(sorted.length, TEMPLATE_DATA_SLOTS); // end of data range
+  const sumRange = `C10:C${lastDataRow}`; // 1-indexed in formula
+
+  const sAddr = XLSX.utils.encode_cell({ r: summaryRow, c: 2 }); // C column
+  ws[sAddr] = { t: "n", v: 0, f: `SUM(${sumRange})` };
+
+  // "Af: evt. voorschot" row
+  const advAddr = XLSX.utils.encode_cell({ r: summaryRow + 1, c: 2 });
+  ws[advAddr] = { t: "n", v: 0 };
+
+  // TOTAAL row
+  const totRow = summaryRow + 2;
+  const subtotalCell = XLSX.utils.encode_cell({ r: summaryRow, c: 2 });
+  const advanceCell = XLSX.utils.encode_cell({ r: summaryRow + 1, c: 2 });
+  const totAddr = XLSX.utils.encode_cell({ r: totRow, c: 2 });
+  // Formula references using cell names (1-indexed)
+  const subtotalRef = `C${summaryRow + 1}`;
+  const advanceRef = `C${summaryRow + 2}`;
+  ws[totAddr] = { t: "n", v: 0, f: `${subtotalRef}-${advanceRef}` };
+
+  // Update sheet range to cover all data
+  const ref = XLSX.utils.decode_range(ws["!ref"]);
+  ref.e.r = Math.max(ref.e.r, totRow + 20); // ensure footer rows are included
+  ws["!ref"] = XLSX.utils.encode_range(ref);
+
   return XLSX.write(wb, { bookType: "xlsx", type: "buffer" });
 }
 
 // =============================================================
-// Helper: Generate DE UNIE travel Excel (server-side)
+// Helper: Generate DE UNIE travel Excel using official template
 // =============================================================
 function generateTravelExcel(expenses, month, year, monthName, employeeName = EMPLOYEE_NAME) {
+  const templatePath = path.join(__dirname, "templates", "reiskosten-template.xlsx");
+  const wb = XLSX.readFile(templatePath);
+  const ws = wb.Sheets["Blad1"];
+
   const sorted = [...expenses].sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
   );
 
-  const totalKm = sorted.reduce((sum, e) => sum + (e.kilometers || 0), 0);
-  const totalKmReimbursement = sorted.reduce((sum, e) => sum + (e.km_reimbursement || 0), 0);
-  const totalTravelCost = sorted.reduce((sum, e) => sum + (e.travel_cost || 0), 0);
-  const totalReimbursement = sorted.reduce((sum, e) => sum + (e.total_reimbursement || 0), 0);
+  // Template layout (0-indexed):
+  // Row 1 (idx 0): DE UNIE declaratieformulier (merged A1:I1)
+  // Row 3 (idx 2): medewerker: | [B3 = name]
+  // Row 4 (idx 3): bank/giro nummer: | [B4 = bank]
+  // Row 5 (idx 4): datum: | [B5 = date]
+  // Rows 7-9 (idx 6-8): column headers
+  // Rows 11-14 (idx 10-13): data rows (4 template slots)
+  // Row 16 (idx 15): Subtotalen with SUM formulas
+  // Row 17 (idx 16): Af: evt. voorschot
+  // Row 18 (idx 17): TOTAAL
+  // Row 20 (idx 19): handtekening
+  // Row 26+ (idx 25+): Toelichting
 
-  const wsData = [];
+  const DATA_START_ROW = 10;   // 0-indexed row 10 = Excel row 11
+  const TEMPLATE_DATA_SLOTS = 4;   // rows 11-14
+  const SUMMARY_START_ROW = 15; // 0-indexed row 15 = Excel row 16
 
-  // Title
-  wsData.push([`${COMPANY_NAME} declaratieformulier`, null, null, null, null, null, null, null, null]);
-  wsData.push([]);
+  // Calculate extra rows needed
+  const extraRows = Math.max(0, sorted.length - TEMPLATE_DATA_SLOTS);
 
-  // Employee info
-  wsData.push(["medewerker:", employeeName]);
-  wsData.push(["bank/giro nummer:", BANK_ACCOUNT]);
-  wsData.push(["datum:", `${new Date().getDate()} ${monthName.toLowerCase()} ${year}`]);
-  wsData.push([]);
-
-  // Column headers
-  wsData.push([
-    "datum", "projectnr.", "projectnaam", "omschrijving",
-    "reiskosten\nOV", null, "km's",
-    `km vergoeding\nbelastingvrij\nx € ${KM_RATE.toFixed(2)}`,
-    "overige\nonkosten", null, "totale\nvergoeding",
-  ]);
-  wsData.push([]);
-
-  // Data rows
-  for (const e of sorted) {
-    const dateParts = (e.date || "").split("-");
-    let dateFormatted = e.date || "";
-    if (dateParts.length === 3) {
-      const m = parseInt(dateParts[1]) - 1;
-      dateFormatted = `${parseInt(dateParts[2])} ${DUTCH_MONTHS[m].toLowerCase()}`;
-    }
-
-    wsData.push([
-      dateFormatted,
-      e.project_code || "",
-      e.project_name || "",
-      e.description || "",
-      e.travel_cost || null,
-      null,
-      e.kilometers || null,
-      e.km_reimbursement || null,
-      null,
-      null,
-      e.total_reimbursement || 0,
-    ]);
+  // If we need more rows, shift the summary/footer section down
+  if (extraRows > 0) {
+    shiftRowsDown(ws, SUMMARY_START_ROW, extraRows, 15); // maxCol = P (index 15)
   }
 
-  wsData.push([]);
+  const now = new Date();
+  const todayStr = `${now.getDate()} ${DUTCH_MONTHS[now.getMonth()].toLowerCase()} ${now.getFullYear()}`;
 
-  // Subtotals
-  wsData.push([
-    null, null, null, "Subtotalen",
-    totalTravelCost || null, "€", totalKm,
-    `€ ${totalKmReimbursement.toFixed(2)}`,
-    null, "€", totalReimbursement,
-  ]);
-  wsData.push([null, null, null, "Af: evt. voorschot", null, null, null, null, null, "€", null]);
-  wsData.push([null, null, null, "TOTAAL", null, null, null, null, null, "€", totalReimbursement]);
+  // Fill header info
+  ws["B3"] = { t: "s", v: employeeName };
+  ws["B4"] = { t: "s", v: BANK_ACCOUNT };
+  ws["B5"] = { t: "s", v: todayStr };
 
-  wsData.push([]);
-  wsData.push([]);
+  // Fill data rows
+  for (let i = 0; i < sorted.length; i++) {
+    const e = sorted[i];
+    const row = DATA_START_ROW + i; // 0-indexed
 
-  // Signature
-  wsData.push(["handtekening werknemer:", null, null, null, null, "handtekening werkgever:"]);
-  wsData.push([]);
-  wsData.push([]);
-  wsData.push([]);
+    const dateFormatted = formatDateDutch(e.date);
 
-  // Toelichting
-  wsData.push(["Toelichting"]);
-  wsData.push(["Interne declaratie voor vergoeding van reiskosten gemaakt in opdracht en tijdens werktijd en overige declaraties. Declaraties kunnen worden ingeleverd bij de directie"]);
-  wsData.push(["De vergoedingen worden op basis van de declaraties met het salaris uitbetaald."]);
+    // A = datum
+    ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { t: "s", v: dateFormatted };
+    // B = projectnr.
+    if (e.project_code) ws[XLSX.utils.encode_cell({ r: row, c: 1 })] = { t: "s", v: e.project_code };
+    // C = projectnaam
+    if (e.project_name) ws[XLSX.utils.encode_cell({ r: row, c: 2 })] = { t: "s", v: e.project_name };
+    // D = omschrijving (kan leeg zijn)
+    if (e.description) ws[XLSX.utils.encode_cell({ r: row, c: 3 })] = { t: "s", v: e.description };
+    // E = reiskosten OV
+    if (e.travel_cost) ws[XLSX.utils.encode_cell({ r: row, c: 4 })] = { t: "n", v: e.travel_cost };
+    // F = km's
+    if (e.kilometers) ws[XLSX.utils.encode_cell({ r: row, c: 5 })] = { t: "n", v: e.kilometers };
+    // G = km vergoeding (formula: F*0.23)
+    const excelRow = row + 1; // 1-indexed for formulas
+    ws[XLSX.utils.encode_cell({ r: row, c: 6 })] = { t: "n", v: (e.kilometers || 0) * KM_RATE, f: `F${excelRow}*0.23` };
+    // H = overige onkosten (leeg)
+    // I = totale vergoeding (formula: SUM(E,G,H))
+    ws[XLSX.utils.encode_cell({ r: row, c: 8 })] = {
+      t: "n",
+      v: (e.travel_cost || 0) + ((e.kilometers || 0) * KM_RATE),
+      f: `SUM(E${excelRow},G${excelRow},H${excelRow})`,
+    };
+  }
 
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
-  ws["!cols"] = [
-    { wch: 16 }, { wch: 16 }, { wch: 20 }, { wch: 24 },
-    { wch: 12 }, { wch: 3 }, { wch: 8 }, { wch: 14 },
-    { wch: 10 }, { wch: 3 }, { wch: 12 },
-  ];
+  // Update summary formulas (shifted by extraRows)
+  const summaryRow = SUMMARY_START_ROW + extraRows; // 0-indexed
+  const lastDataExcelRow = DATA_START_ROW + Math.max(sorted.length, TEMPLATE_DATA_SLOTS); // 0-indexed end
+  const lastDataRef = lastDataExcelRow; // for formula range (1-indexed = lastDataExcelRow + 1, but we use the max slot)
+  const dataEndRef = DATA_START_ROW + Math.max(sorted.length - 1, TEMPLATE_DATA_SLOTS - 1) + 1; // 1-indexed last data row
 
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, `Declaratie ${monthName} ${year}`);
+  // Subtotalen row formulas
+  const sumRowRef = summaryRow + 1; // 1-indexed
+  // E = SUM of OV costs
+  ws[XLSX.utils.encode_cell({ r: summaryRow, c: 4 })] = { t: "n", v: 0, f: `SUM(E11:E${dataEndRef})` };
+  // F = SUM of km's
+  ws[XLSX.utils.encode_cell({ r: summaryRow, c: 5 })] = { t: "n", v: 0, f: `SUM(F11:F${dataEndRef})` };
+  // G = SUM of km vergoeding
+  ws[XLSX.utils.encode_cell({ r: summaryRow, c: 6 })] = { t: "n", v: 0, f: `SUM(G11:G${dataEndRef})` };
+  // H = SUM of overige onkosten
+  ws[XLSX.utils.encode_cell({ r: summaryRow, c: 7 })] = { t: "n", v: 0, f: `SUM(H11:H${dataEndRef})` };
+  // I = SUM of totale vergoeding
+  ws[XLSX.utils.encode_cell({ r: summaryRow, c: 8 })] = { t: "n", v: 0, f: `SUM(I11:I${dataEndRef})` };
+
+  // "Af: evt. voorschot" row
+  const advRow = summaryRow + 1;
+  ws[XLSX.utils.encode_cell({ r: advRow, c: 8 })] = { t: "n", v: 0 };
+
+  // TOTAAL row
+  const totRow = summaryRow + 2;
+  ws[XLSX.utils.encode_cell({ r: totRow, c: 8 })] = {
+    t: "n", v: 0,
+    f: `I${summaryRow + 1}-I${advRow + 1}`,
+  };
+
+  // Update sheet range
+  const ref = XLSX.utils.decode_range(ws["!ref"]);
+  ref.e.r = Math.max(ref.e.r, totRow + 20);
+  ws["!ref"] = XLSX.utils.encode_range(ref);
+
   return XLSX.write(wb, { bookType: "xlsx", type: "buffer" });
 }
