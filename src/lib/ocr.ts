@@ -1,5 +1,6 @@
 import { parseReceiptText } from './receiptParser'
 import { OCR_FUNCTION_URL } from './constants'
+import { getAuthToken } from './firebase'
 import type { OcrResult } from '@/types/receipt'
 
 /**
@@ -8,10 +9,12 @@ import type { OcrResult } from '@/types/receipt'
  */
 export async function processReceiptOcr(imageBase64: string): Promise<OcrResult> {
   try {
+    const token = await getAuthToken()
     const response = await fetch(OCR_FUNCTION_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
       },
       body: JSON.stringify({ image: imageBase64 }),
     })

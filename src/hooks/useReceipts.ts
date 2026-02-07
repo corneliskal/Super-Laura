@@ -19,7 +19,7 @@ import {
   getBlob,
   deleteObject,
 } from 'firebase/storage'
-import { db, storage } from '@/lib/firebase'
+import { db, storage, auth } from '@/lib/firebase'
 import { generatePhotoPath } from '@/lib/imageUtils'
 import type { Receipt, ReceiptFormData, Submission } from '@/types/receipt'
 
@@ -53,6 +53,9 @@ export function useReceipts() {
   const [error, setError] = useState<string | null>(null)
 
   const fetchReceipts = useCallback(async (month?: number, year?: number) => {
+    const userId = auth.currentUser?.uid
+    if (!userId) { setLoading(false); return }
+
     setLoading(true)
     setError(null)
     try {
@@ -65,6 +68,7 @@ export function useReceipts() {
 
         q = query(
           collection(db, RECEIPTS_COLLECTION),
+          where('userId', '==', userId),
           where('receipt_date', '>=', startDate),
           where('receipt_date', '<', endDate),
           orderBy('receipt_date', 'desc')
@@ -72,6 +76,7 @@ export function useReceipts() {
       } else {
         q = query(
           collection(db, RECEIPTS_COLLECTION),
+          where('userId', '==', userId),
           orderBy('receipt_date', 'desc')
         )
       }
@@ -104,8 +109,12 @@ export function useReceipts() {
       const photoUrl = await getDownloadURL(storageRef)
 
       // Create receipt document in Firestore
+      const userId = auth.currentUser?.uid
+      if (!userId) throw new Error('Niet ingelogd')
+
       const now = new Date().toISOString()
       const receiptData = {
+        userId,
         photo_path: photoPath,
         photo_url: photoUrl,
         store_name: formData.store_name,
@@ -183,15 +192,17 @@ export function useReceipts() {
   }, [receipts])
 
   const getReceiptsByMonth = useCallback(async (month: number, year: number): Promise<Receipt[]> => {
+    const userId = auth.currentUser?.uid
+    if (!userId) return []
+
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`
     const endDate = month === 12
       ? `${year + 1}-01-01`
       : `${year}-${String(month + 1).padStart(2, '0')}-01`
 
-    // Fetch all receipts for this month, then filter client-side for is_submitted
-    // This avoids Firestore composite index issues with inequality + equality on different fields
     const q = query(
       collection(db, RECEIPTS_COLLECTION),
+      where('userId', '==', userId),
       where('receipt_date', '>=', startDate),
       where('receipt_date', '<', endDate),
       orderBy('receipt_date', 'asc')
@@ -204,6 +215,9 @@ export function useReceipts() {
   }, [])
 
   const getSubmittedReceiptsByMonth = useCallback(async (month: number, year: number): Promise<Receipt[]> => {
+    const userId = auth.currentUser?.uid
+    if (!userId) return []
+
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`
     const endDate = month === 12
       ? `${year + 1}-01-01`
@@ -211,6 +225,7 @@ export function useReceipts() {
 
     const q = query(
       collection(db, RECEIPTS_COLLECTION),
+      where('userId', '==', userId),
       where('receipt_date', '>=', startDate),
       where('receipt_date', '<', endDate),
       orderBy('receipt_date', 'asc')
@@ -251,7 +266,11 @@ export function useReceipts() {
     totalAmount: number,
     receiptCount: number
   ): Promise<Submission> => {
+    const userId = auth.currentUser?.uid
+    if (!userId) throw new Error('Niet ingelogd')
+
     const submissionData = {
+      userId,
       month,
       year,
       total_amount: totalAmount,
@@ -302,6 +321,9 @@ export function useReceiptStats() {
 
   useEffect(() => {
     async function fetchStats() {
+      const userId = auth.currentUser?.uid
+      if (!userId) { setStats({ count: 0, total: 0, loading: false }); return }
+
       const now = new Date()
       const month = now.getMonth() + 1
       const year = now.getFullYear()
@@ -313,6 +335,7 @@ export function useReceiptStats() {
       try {
         const q = query(
           collection(db, RECEIPTS_COLLECTION),
+          where('userId', '==', userId),
           where('receipt_date', '>=', startDate),
           where('receipt_date', '<', endDate)
         )

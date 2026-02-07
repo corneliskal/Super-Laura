@@ -10,7 +10,7 @@ import {
   orderBy,
   writeBatch,
 } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
+import { db, auth } from '@/lib/firebase'
 import { KM_RATE, type TravelExpense, type TravelExpenseFormData, type TravelSubmission } from '@/types/receipt'
 
 const TRAVEL_COLLECTION = 'travel_expenses'
@@ -41,6 +41,9 @@ export function useTravel() {
   const [error, setError] = useState<string | null>(null)
 
   const fetchExpenses = useCallback(async (month?: number, year?: number) => {
+    const userId = auth.currentUser?.uid
+    if (!userId) { setLoading(false); return }
+
     setLoading(true)
     setError(null)
     try {
@@ -53,6 +56,7 @@ export function useTravel() {
 
         q = query(
           collection(db, TRAVEL_COLLECTION),
+          where('userId', '==', userId),
           where('date', '>=', startDate),
           where('date', '<', endDate),
           orderBy('date', 'desc')
@@ -60,6 +64,7 @@ export function useTravel() {
       } else {
         q = query(
           collection(db, TRAVEL_COLLECTION),
+          where('userId', '==', userId),
           orderBy('date', 'desc')
         )
       }
@@ -77,6 +82,9 @@ export function useTravel() {
 
   const createExpense = useCallback(async (formData: TravelExpenseFormData): Promise<TravelExpense | null> => {
     try {
+      const userId = auth.currentUser?.uid
+      if (!userId) throw new Error('Niet ingelogd')
+
       const now = new Date().toISOString()
       const kilometers = parseFloat(formData.kilometers) || 0
       const travelCost = parseFloat(formData.travel_cost) || 0
@@ -84,6 +92,7 @@ export function useTravel() {
       const totalReimbursement = Math.round((travelCost + kmReimbursement) * 100) / 100
 
       const expenseData = {
+        userId,
         date: formData.date,
         project_code: formData.project_code,
         project_name: formData.project_name,
@@ -121,6 +130,9 @@ export function useTravel() {
   }, [])
 
   const getExpensesByMonth = useCallback(async (month: number, year: number): Promise<TravelExpense[]> => {
+    const userId = auth.currentUser?.uid
+    if (!userId) return []
+
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`
     const endDate = month === 12
       ? `${year + 1}-01-01`
@@ -128,6 +140,7 @@ export function useTravel() {
 
     const q = query(
       collection(db, TRAVEL_COLLECTION),
+      where('userId', '==', userId),
       where('date', '>=', startDate),
       where('date', '<', endDate),
       orderBy('date', 'asc')
@@ -140,6 +153,9 @@ export function useTravel() {
   }, [])
 
   const getSubmittedExpensesByMonth = useCallback(async (month: number, year: number): Promise<TravelExpense[]> => {
+    const userId = auth.currentUser?.uid
+    if (!userId) return []
+
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`
     const endDate = month === 12
       ? `${year + 1}-01-01`
@@ -147,6 +163,7 @@ export function useTravel() {
 
     const q = query(
       collection(db, TRAVEL_COLLECTION),
+      where('userId', '==', userId),
       where('date', '>=', startDate),
       where('date', '<', endDate),
       orderBy('date', 'asc')
@@ -187,7 +204,11 @@ export function useTravel() {
     totalAmount: number,
     entryCount: number
   ): Promise<TravelSubmission> => {
+    const userId = auth.currentUser?.uid
+    if (!userId) throw new Error('Niet ingelogd')
+
     const submissionData = {
+      userId,
       month,
       year,
       total_amount: totalAmount,
@@ -231,6 +252,9 @@ export function useTravelStats() {
 
   useEffect(() => {
     async function fetchStats() {
+      const userId = auth.currentUser?.uid
+      if (!userId) { setStats({ count: 0, totalKm: 0, totalReimbursement: 0, loading: false }); return }
+
       const now = new Date()
       const month = now.getMonth() + 1
       const year = now.getFullYear()
@@ -242,6 +266,7 @@ export function useTravelStats() {
       try {
         const q = query(
           collection(db, TRAVEL_COLLECTION),
+          where('userId', '==', userId),
           where('date', '>=', startDate),
           where('date', '<', endDate)
         )

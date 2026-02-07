@@ -8,9 +8,12 @@ import { MonthPicker } from '@/components/submission/MonthPicker'
 import { formatEuro, currentMonthYear } from '@/lib/dateUtils'
 import { DUTCH_MONTHS, type TravelExpense } from '@/types/receipt'
 import { SUBMIT_TRAVEL_URL } from '@/lib/constants'
+import { getAuthToken } from '@/lib/firebase'
+import { useSettings } from '@/hooks/useSettings'
 
 export function TravelOverviewPage() {
   const { expenses, fetchExpenses, deleteExpense, getSubmittedExpensesByMonth, loading } = useTravel()
+  const { settings } = useSettings()
   const { showToast } = useToast()
   const [month, setMonth] = useState(currentMonthYear().month)
   const [year, setYear] = useState(currentMonthYear().year)
@@ -44,10 +47,14 @@ export function TravelOverviewPage() {
   const handleSubmit = async () => {
     setSubmitting(true)
     try {
+      const token = await getAuthToken()
       const response = await fetch(SUBMIT_TRAVEL_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ month, year }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify({ month, year, recipientEmail: settings.recipientEmail, employeeName: settings.employeeName }),
       })
 
       const result = await response.json()

@@ -22,6 +22,21 @@ function handleCors(req, res, handler) {
   return handler(req, res);
 }
 
+// Verify Firebase Auth token from Authorization header
+async function verifyAuth(req) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return null;
+  }
+  try {
+    const token = authHeader.split("Bearer ")[1];
+    return await admin.auth().verifyIdToken(token);
+  } catch (err) {
+    console.warn("Auth token verification failed:", err.message);
+    return null;
+  }
+}
+
 // =============================================================
 // Gmail transporter (reused across function invocations)
 // =============================================================
@@ -184,18 +199,30 @@ exports.submitReceipts = functions
         return;
       }
 
+      // Verify auth
+      const decodedToken = await verifyAuth(req);
+      if (!decodedToken) {
+        res.status(401).json({ error: "Niet ingelogd" });
+        return;
+      }
+      const userId = decodedToken.uid;
+
       try {
-        const { month, year } = req.body;
+        const { month, year, recipientEmail: reqRecipientEmail, employeeName: reqEmployeeName } = req.body;
         if (!month || !year) {
           res.status(400).json({ error: "month and year required" });
           return;
         }
 
-        const monthName = DUTCH_MONTHS[month - 1];
-        console.log(`Submitting receipts for ${monthName} ${year}`);
+        const recipientEmail = reqRecipientEmail || RECIPIENT_EMAIL;
+        const employeeName = reqEmployeeName || EMPLOYEE_NAME;
 
-        // Fetch unsubmitted receipts for this month
+        const monthName = DUTCH_MONTHS[month - 1];
+        console.log(`Submitting receipts for ${monthName} ${year}, user: ${userId}, to: ${recipientEmail}`);
+
+        // Fetch unsubmitted receipts for this month, filtered by user
         const receiptsSnap = await db.collection("receipts")
+          .where("userId", "==", userId)
           .where("is_submitted", "==", false)
           .get();
 
@@ -224,7 +251,7 @@ exports.submitReceipts = functions
           if (r.photo_path) {
             try {
               const bucket = storage.bucket();
-              const file = bucket.file(r.photo_path);
+              const file = bucket.file(`receipt-photos/${r.photo_path}`);
               const [buffer] = await file.download();
               const dateStr = (r.receipt_date || "").replace(/-/g, "");
               const store = (r.store_name || "onbekend").replace(/[^a-zA-Z0-9]/g, "_");
@@ -253,8 +280,8 @@ exports.submitReceipts = functions
         const mail = getTransporter();
         await mail.sendMail({
           from: `"Super Laura" <${process.env.GMAIL_EMAIL}>`,
-          to: RECIPIENT_EMAIL,
-          subject: `Bonnetjes ${monthName} ${year} - Laura`,
+          to: recipientEmail,
+          subject: `Bonnetjes ${monthName} ${year} - ${employeeName}`,
           html: `
             <h2>Bonnetjes ${monthName} ${year}</h2>
             <p>Hierbij de bonnetjes van ${monthName} ${year}.</p>
@@ -272,6 +299,7 @@ exports.submitReceipts = functions
 
         // Mark receipts as submitted
         const submission = await db.collection("submissions").add({
+          userId,
           month,
           year,
           total_amount: totalAmount,
@@ -314,18 +342,30 @@ exports.submitTravel = functions
         return;
       }
 
+      // Verify auth
+      const decodedToken = await verifyAuth(req);
+      if (!decodedToken) {
+        res.status(401).json({ error: "Niet ingelogd" });
+        return;
+      }
+      const userId = decodedToken.uid;
+
       try {
-        const { month, year } = req.body;
+        const { month, year, recipientEmail: reqRecipientEmail, employeeName: reqEmployeeName } = req.body;
         if (!month || !year) {
           res.status(400).json({ error: "month and year required" });
           return;
         }
 
-        const monthName = DUTCH_MONTHS[month - 1];
-        console.log(`Submitting travel expenses for ${monthName} ${year}`);
+        const recipientEmail = reqRecipientEmail || RECIPIENT_EMAIL;
+        const employeeName = reqEmployeeName || EMPLOYEE_NAME;
 
-        // Fetch unsubmitted travel expenses for this month
+        const monthName = DUTCH_MONTHS[month - 1];
+        console.log(`Submitting travel expenses for ${monthName} ${year}, user: ${userId}, to: ${recipientEmail}`);
+
+        // Fetch unsubmitted travel expenses for this month, filtered by user
         const expensesSnap = await db.collection("travel_expenses")
+          .where("userId", "==", userId)
           .where("is_submitted", "==", false)
           .get();
 
@@ -344,7 +384,7 @@ exports.submitTravel = functions
         }
 
         // Generate DE UNIE template Excel
-        const excelBuffer = generateTravelExcel(expenses, month, year, monthName);
+        const excelBuffer = generateTravelExcel(expenses, month, year, monthName, employeeName);
 
         const totalKm = expenses.reduce((sum, e) => sum + (e.kilometers || 0), 0);
         const totalReimbursement = expenses.reduce((sum, e) => sum + (e.total_reimbursement || 0), 0);
@@ -353,8 +393,8 @@ exports.submitTravel = functions
         const mail = getTransporter();
         await mail.sendMail({
           from: `"Super Laura" <${process.env.GMAIL_EMAIL}>`,
-          to: RECIPIENT_EMAIL,
-          subject: `Declaratie reiskosten ${monthName} ${year} - ${EMPLOYEE_NAME}`,
+          to: recipientEmail,
+          subject: `Declaratie reiskosten ${monthName} ${year} - ${employeeName}`,
           html: `
             <h2>Declaratie reiskosten ${monthName} ${year}</h2>
             <p>Hierbij de declaratie reiskosten van ${monthName} ${year}.</p>
@@ -378,6 +418,7 @@ exports.submitTravel = functions
 
         // Mark as submitted
         const submission = await db.collection("travel_submissions").add({
+          userId,
           month,
           year,
           total_amount: totalReimbursement,
@@ -451,7 +492,7 @@ function generateReceiptsExcel(receipts, month, year, monthName) {
 // =============================================================
 // Helper: Generate DE UNIE travel Excel (server-side)
 // =============================================================
-function generateTravelExcel(expenses, month, year, monthName) {
+function generateTravelExcel(expenses, month, year, monthName, employeeName = EMPLOYEE_NAME) {
   const sorted = [...expenses].sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
   );
@@ -468,7 +509,7 @@ function generateTravelExcel(expenses, month, year, monthName) {
   wsData.push([]);
 
   // Employee info
-  wsData.push(["medewerker:", EMPLOYEE_NAME]);
+  wsData.push(["medewerker:", employeeName]);
   wsData.push(["bank/giro nummer:", BANK_ACCOUNT]);
   wsData.push(["datum:", `${new Date().getDate()} ${monthName.toLowerCase()} ${year}`]);
   wsData.push([]);
