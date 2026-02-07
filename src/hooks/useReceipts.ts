@@ -203,6 +203,25 @@ export function useReceipts() {
       .filter((r) => !r.is_submitted)
   }, [])
 
+  const getSubmittedReceiptsByMonth = useCallback(async (month: number, year: number): Promise<Receipt[]> => {
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01`
+    const endDate = month === 12
+      ? `${year + 1}-01-01`
+      : `${year}-${String(month + 1).padStart(2, '0')}-01`
+
+    const q = query(
+      collection(db, RECEIPTS_COLLECTION),
+      where('receipt_date', '>=', startDate),
+      where('receipt_date', '<', endDate),
+      orderBy('receipt_date', 'asc')
+    )
+
+    const snapshot = await getDocs(q)
+    return snapshot.docs
+      .map(docToReceipt)
+      .filter((r) => r.is_submitted)
+  }, [])
+
   const markAsSubmitted = useCallback(async (receiptIds: string[], submissionId: string) => {
     const batch = writeBatch(db)
 
@@ -264,6 +283,7 @@ export function useReceipts() {
     updateReceipt,
     deleteReceipt,
     getReceiptsByMonth,
+    getSubmittedReceiptsByMonth,
     markAsSubmitted,
     createSubmission,
     getPhotoBlob,

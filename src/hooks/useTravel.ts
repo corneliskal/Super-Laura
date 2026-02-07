@@ -139,6 +139,25 @@ export function useTravel() {
       .filter((e) => !e.is_submitted)
   }, [])
 
+  const getSubmittedExpensesByMonth = useCallback(async (month: number, year: number): Promise<TravelExpense[]> => {
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01`
+    const endDate = month === 12
+      ? `${year + 1}-01-01`
+      : `${year}-${String(month + 1).padStart(2, '0')}-01`
+
+    const q = query(
+      collection(db, TRAVEL_COLLECTION),
+      where('date', '>=', startDate),
+      where('date', '<', endDate),
+      orderBy('date', 'asc')
+    )
+
+    const snapshot = await getDocs(q)
+    return snapshot.docs
+      .map(docToTravelExpense)
+      .filter((e) => e.is_submitted)
+  }, [])
+
   const markAsSubmitted = useCallback(async (expenseIds: string[], submissionId: string) => {
     const batch = writeBatch(db)
 
@@ -193,6 +212,7 @@ export function useTravel() {
     createExpense,
     deleteExpense,
     getExpensesByMonth,
+    getSubmittedExpensesByMonth,
     markAsSubmitted,
     createSubmission,
   }

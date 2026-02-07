@@ -1,31 +1,67 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, SlidersHorizontal, PlusCircle, Send } from 'lucide-react'
+import { Search, SlidersHorizontal, PlusCircle, Send, Loader2, CheckCircle } from 'lucide-react'
 import { useReceipts } from '@/hooks/useReceipts'
+import { useToast } from '@/components/ui/Toast'
 import { ReceiptCard } from '@/components/receipt/ReceiptCard'
 import { MonthPicker } from '@/components/submission/MonthPicker'
 import { formatEuro, currentMonthYear } from '@/lib/dateUtils'
-import { CATEGORIES } from '@/types/receipt'
+import { CATEGORIES, DUTCH_MONTHS, type Receipt } from '@/types/receipt'
+import { SUBMIT_RECEIPTS_URL } from '@/lib/constants'
 
 export function ReceiptsOverviewPage() {
-  const { receipts, fetchReceipts, loading } = useReceipts()
+  const { receipts, fetchReceipts, getSubmittedReceiptsByMonth, loading } = useReceipts()
+  const { showToast } = useToast()
   const [month, setMonth] = useState(currentMonthYear().month)
   const [year, setYear] = useState(currentMonthYear().year)
   const [searchQuery, setSearchQuery] = useState('')
   const [filterCategory, setFilterCategory] = useState<string>('')
   const [showFilters, setShowFilters] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submittedReceipts, setSubmittedReceipts] = useState<Receipt[]>([])
 
   useEffect(() => {
     fetchReceipts(month, year)
-  }, [fetchReceipts, month, year])
+    getSubmittedReceiptsByMonth(month, year).then(setSubmittedReceipts).catch(() => {})
+  }, [fetchReceipts, getSubmittedReceiptsByMonth, month, year])
 
   const handleMonthChange = (newMonth: number, newYear: number) => {
     setMonth(newMonth)
     setYear(newYear)
   }
 
-  // Filter receipts
-  const filtered = receipts.filter((r) => {
+  const handleSubmit = async () => {
+    setSubmitting(true)
+    try {
+      const response = await fetch(SUBMIT_RECEIPTS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month, year }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Verzenden mislukt')
+      }
+
+      showToast('success', `${result.message} ✉️`)
+      // Refresh both lists
+      fetchReceipts(month, year)
+      getSubmittedReceiptsByMonth(month, year).then(setSubmittedReceipts).catch(() => {})
+    } catch (err) {
+      console.error('Submit error:', err)
+      showToast('error', err instanceof Error ? err.message : 'Verzenden mislukt. Probeer opnieuw.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // Only show non-submitted in the main list
+  const pendingReceipts = receipts.filter((r) => !r.is_submitted)
+
+  // Filter pending receipts
+  const filtered = pendingReceipts.filter((r) => {
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
       const matchesSearch =
@@ -39,31 +75,23 @@ export function ReceiptsOverviewPage() {
   })
 
   const totalAmount = filtered.reduce((sum, r) => sum + r.amount, 0)
+  const submittedTotal = submittedReceipts.reduce((sum, r) => sum + r.amount, 0)
+  const monthName = DUTCH_MONTHS[month - 1]
 
   return (
     <div className="p-4 space-y-4">
-      {/* Header with action buttons */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-gray-900">Bonnetjes</h2>
-        <div className="flex items-center gap-2">
-          <Link
-            to="/indienen"
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-primary-600 hover:bg-primary-50 transition-colors"
-          >
-            <Send size={16} />
-            Indienen
-          </Link>
-          <Link
-            to="/nieuw"
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 transition-colors shadow-sm"
-          >
-            <PlusCircle size={16} />
-            Nieuw
-          </Link>
-        </div>
+        <Link
+          to="/nieuw"
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 transition-colors shadow-sm"
+        >
+          <PlusCircle size={16} />
+          Nieuw
+        </Link>
       </div>
 
-      {/* Month picker */}
       <MonthPicker month={month} year={year} onChange={handleMonthChange} />
 
       {/* Search + filter */}
@@ -120,13 +148,7 @@ export function ReceiptsOverviewPage() {
         )}
       </div>
 
-      {/* Summary */}
-      <div className="flex items-center justify-between text-sm text-gray-600 px-1">
-        <span>{filtered.length} bonnetje{filtered.length !== 1 ? 's' : ''}</span>
-        <span className="font-semibold text-gray-900">{formatEuro(totalAmount)}</span>
-      </div>
-
-      {/* Receipt list */}
+      {/* Pending receipts */}
       {loading ? (
         <div className="space-y-2">
           {[1, 2, 3, 4, 5].map((i) => (
@@ -143,20 +165,80 @@ export function ReceiptsOverviewPage() {
           ))}
         </div>
       ) : filtered.length > 0 ? (
-        <div className="space-y-2">
-          {filtered.map((receipt) => (
-            <ReceiptCard key={receipt.id} receipt={receipt} />
-          ))}
-        </div>
+        <>
+          {/* Summary */}
+          <div className="flex items-center justify-between text-sm text-gray-600 px-1">
+            <span>{filtered.length} openstaand</span>
+            <span className="font-semibold text-gray-900">{formatEuro(totalAmount)}</span>
+          </div>
+
+          {/* Receipt list */}
+          <div className="space-y-2">
+            {filtered.map((receipt) => (
+              <ReceiptCard key={receipt.id} receipt={receipt} />
+            ))}
+          </div>
+
+          {/* Submit button */}
+          <button
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="w-full py-4 rounded-xl bg-green-500 text-white font-bold text-lg hover:bg-green-600 disabled:opacity-50 transition-colors shadow-md flex items-center justify-center gap-2"
+          >
+            {submitting ? (
+              <>
+                <Loader2 size={22} className="animate-spin" />
+                Versturen...
+              </>
+            ) : (
+              <>
+                <Send size={22} />
+                Indienen per e-mail
+              </>
+            )}
+          </button>
+        </>
       ) : (
         <div className="text-center py-12">
           <p className="text-gray-400 text-4xl mb-3">🧾</p>
-          <p className="text-gray-500 font-medium">Geen bonnetjes gevonden</p>
+          <p className="text-gray-500 font-medium">Geen openstaande bonnetjes</p>
           <p className="text-gray-400 text-sm mt-1">
             {searchQuery || filterCategory
               ? 'Probeer een andere zoekopdracht of filter'
-              : 'Voeg een bonnetje toe via het + icoon'}
+              : 'Voeg een bonnetje toe via de + knop'}
           </p>
+        </div>
+      )}
+
+      {/* Al ingediend section */}
+      {submittedReceipts.length > 0 && (
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-green-100">
+          <div className="flex items-center gap-2 mb-3">
+            <CheckCircle size={18} className="text-green-500" />
+            <h3 className="font-bold text-gray-900">Ingediend in {monthName}</h3>
+          </div>
+          <div className="grid grid-cols-2 gap-4 mb-3">
+            <div className="bg-green-50 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-green-700">{submittedReceipts.length}</p>
+              <p className="text-xs text-green-500">bonnetjes</p>
+            </div>
+            <div className="bg-green-50 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-green-700">{formatEuro(submittedTotal)}</p>
+              <p className="text-xs text-green-500">totaal</p>
+            </div>
+          </div>
+          <details>
+            <summary className="text-sm text-green-600 font-medium cursor-pointer hover:text-green-700">
+              Bekijk ingediende bonnetjes
+            </summary>
+            <div className="mt-3 space-y-2">
+              {submittedReceipts.map((r) => (
+                <div key={r.id} className="opacity-70">
+                  <ReceiptCard receipt={r} />
+                </div>
+              ))}
+            </div>
+          </details>
         </div>
       )}
     </div>

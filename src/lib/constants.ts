@@ -6,8 +6,10 @@ export const MAX_IMAGE_WIDTH = 1200
 export const IMAGE_QUALITY = 0.8
 export const THUMBNAIL_SIZE = 200
 
-// Firebase Cloud Function URL for OCR
+// Firebase Cloud Function URLs
 export const OCR_FUNCTION_URL = 'https://europe-west1-super-laura-fb40a.cloudfunctions.net/analyzeReceipt'
+export const SUBMIT_RECEIPTS_URL = 'https://europe-west1-super-laura-fb40a.cloudfunctions.net/submitReceipts'
+export const SUBMIT_TRAVEL_URL = 'https://europe-west1-super-laura-fb40a.cloudfunctions.net/submitTravel'
 
 // Travel expense constants
 export const EMPLOYEE_NAME = 'Laura Favata'

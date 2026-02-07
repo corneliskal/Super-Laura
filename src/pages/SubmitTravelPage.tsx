@@ -1,110 +1,73 @@
 import { useState, useCallback } from 'react'
-import { Download, Mail, CheckCircle, Package, Loader2 } from 'lucide-react'
+import { Send, Package, Loader2, CheckCircle } from 'lucide-react'
 import { MonthPicker } from '@/components/submission/MonthPicker'
 import { TravelCard } from '@/components/travel/TravelCard'
 import { useTravel } from '@/hooks/useTravel'
 import { useToast } from '@/components/ui/Toast'
-import { generateTravelExcel, getTravelExcelFilename } from '@/lib/travelExcelGenerator'
 import { formatEuro, currentMonthYear } from '@/lib/dateUtils'
-import { DUTCH_MONTHS, KM_RATE, type TravelExpense } from '@/types/receipt'
-import { RECIPIENT_EMAIL, EMPLOYEE_NAME } from '@/lib/constants'
+import { DUTCH_MONTHS, type TravelExpense } from '@/types/receipt'
+import { SUBMIT_TRAVEL_URL } from '@/lib/constants'
 
 export function SubmitTravelPage() {
   const { showToast } = useToast()
-  const { getExpensesByMonth, markAsSubmitted, createSubmission } = useTravel()
+  const { getExpensesByMonth, getSubmittedExpensesByMonth } = useTravel()
   const [month, setMonth] = useState(currentMonthYear().month)
   const [year, setYear] = useState(currentMonthYear().year)
   const [expenses, setExpenses] = useState<TravelExpense[]>([])
+  const [submittedExpenses, setSubmittedExpenses] = useState<TravelExpense[]>([])
   const [loaded, setLoaded] = useState(false)
   const [loadingExpenses, setLoadingExpenses] = useState(false)
-  const [exporting, setExporting] = useState(false)
-  const [exported, setExported] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
 
   const loadExpenses = useCallback(async () => {
     setLoadingExpenses(true)
     try {
-      const data = await getExpensesByMonth(month, year)
-      setExpenses(data)
+      const [pending, done] = await Promise.all([
+        getExpensesByMonth(month, year),
+        getSubmittedExpensesByMonth(month, year),
+      ])
+      setExpenses(pending)
+      setSubmittedExpenses(done)
       setLoaded(true)
-      setExported(false)
+      setSubmitted(false)
     } catch {
       showToast('error', 'Kon reiskosten niet laden')
     } finally {
       setLoadingExpenses(false)
     }
-  }, [month, year, getExpensesByMonth, showToast])
+  }, [month, year, getExpensesByMonth, getSubmittedExpensesByMonth, showToast])
 
   const handleMonthChange = (newMonth: number, newYear: number) => {
     setMonth(newMonth)
     setYear(newYear)
     setLoaded(false)
-    setExported(false)
+    setSubmitted(false)
   }
 
-  const handleExport = async () => {
-    if (expenses.length === 0) return
-    setExporting(true)
-
-    try {
-      // Generate Excel declaratieformulier
-      const excelBlob = generateTravelExcel(expenses, month, year)
-
-      // Trigger download
-      const url = URL.createObjectURL(excelBlob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = getTravelExcelFilename(month, year)
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-
-      setExported(true)
-      showToast('success', 'Declaratieformulier gedownload!')
-    } catch (err) {
-      console.error('Export error:', err)
-      showToast('error', 'Exporteren mislukt. Probeer opnieuw.')
-    } finally {
-      setExporting(false)
-    }
-  }
-
-  const handleOpenEmail = () => {
-    const monthName = DUTCH_MONTHS[month - 1]
-    const totalReimbursement = expenses.reduce((sum, e) => sum + e.total_reimbursement, 0)
-    const totalKm = expenses.reduce((sum, e) => sum + e.kilometers, 0)
-
-    const subject = encodeURIComponent(`Declaratie reiskosten ${monthName} ${year} - ${EMPLOYEE_NAME}`)
-    const body = encodeURIComponent(
-      `Hallo,\r\n\r\n` +
-      `Hierbij mijn declaratie reiskosten van ${monthName} ${year}.\r\n\r\n` +
-      `Aantal declaraties: ${expenses.length}\r\n` +
-      `Totaal kilometers: ${totalKm}\r\n` +
-      `Km vergoeding (${totalKm} × € ${KM_RATE.toFixed(2)}): ${formatEuro(totalReimbursement)}\r\n\r\n` +
-      `Het declaratieformulier is bijgevoegd als Excel-bestand.\r\n\r\n` +
-      `Vergeet niet het bestand als bijlage toe te voegen!\r\n\r\n` +
-      `Groetjes,\r\n${EMPLOYEE_NAME}`
-    )
-
-    window.open(`mailto:${RECIPIENT_EMAIL}?subject=${subject}&body=${body}`, '_blank')
-  }
-
-  const handleMarkSent = async () => {
+  const handleSubmit = async () => {
     setSubmitting(true)
     try {
-      const totalAmount = expenses.reduce((sum, e) => sum + e.total_reimbursement, 0)
-      const submission = await createSubmission(month, year, totalAmount, expenses.length)
-      await markAsSubmitted(
-        expenses.map((e) => e.id),
-        submission.id
-      )
-      showToast('success', 'Reiskosten zijn als ingediend gemarkeerd! ✅')
+      const response = await fetch(SUBMIT_TRAVEL_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month, year }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Verzenden mislukt')
+      }
+
+      // Move pending to submitted list
+      setSubmittedExpenses((prev) => [...prev, ...expenses])
       setExpenses([])
-      setLoaded(false)
+      setSubmitted(true)
+      showToast('success', `${result.message} ✉️`)
     } catch (err) {
       console.error('Submit error:', err)
-      showToast('error', 'Kon niet markeren als ingediend')
+      showToast('error', err instanceof Error ? err.message : 'Verzenden mislukt. Probeer opnieuw.')
     } finally {
       setSubmitting(false)
     }
@@ -112,6 +75,9 @@ export function SubmitTravelPage() {
 
   const totalKm = expenses.reduce((sum, e) => sum + e.kilometers, 0)
   const totalReimbursement = expenses.reduce((sum, e) => sum + e.total_reimbursement, 0)
+  const submittedKm = submittedExpenses.reduce((sum, e) => sum + e.kilometers, 0)
+  const submittedTotal = submittedExpenses.reduce((sum, e) => sum + e.total_reimbursement, 0)
+  const monthName = DUTCH_MONTHS[month - 1]
 
   return (
     <div className="p-4 space-y-5">
@@ -143,19 +109,28 @@ export function SubmitTravelPage() {
       {/* Loaded content */}
       {loaded && (
         <>
-          {expenses.length === 0 ? (
+          {/* Pending expenses */}
+          {submitted ? (
+            <div className="text-center py-8 bg-white rounded-2xl border border-gray-100">
+              <p className="text-4xl mb-3">✉️</p>
+              <p className="text-gray-900 font-bold text-lg">Verstuurd!</p>
+              <p className="text-gray-500 text-sm mt-1">
+                De reiskosten van {monthName} zijn per e-mail verstuurd
+              </p>
+            </div>
+          ) : expenses.length === 0 ? (
             <div className="text-center py-8 bg-white rounded-2xl border border-gray-100">
               <p className="text-4xl mb-3">✅</p>
               <p className="text-gray-500 font-medium">Geen openstaande reiskosten</p>
               <p className="text-gray-400 text-sm mt-1">
-                Alle reiskosten van {DUTCH_MONTHS[month - 1]} zijn al ingediend
+                Alle reiskosten van {monthName} zijn al ingediend
               </p>
             </div>
           ) : (
             <>
               {/* Summary */}
               <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                <h3 className="font-bold text-gray-900 mb-3">Overzicht</h3>
+                <h3 className="font-bold text-gray-900 mb-3">Openstaand</h3>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="bg-blue-50 rounded-xl p-3 text-center">
                     <p className="text-xl font-bold text-blue-700">{expenses.length}</p>
@@ -183,89 +158,66 @@ export function SubmitTravelPage() {
                 </details>
               </div>
 
-              {/* Export section */}
-              <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-4">
-                <h3 className="font-bold text-gray-900">Declaratieformulier versturen</h3>
-
-                {/* Step 1: Export */}
-                <div className="space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className="w-7 h-7 rounded-full bg-primary-600 text-white flex items-center justify-center text-sm font-bold shrink-0">1</div>
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900 text-sm">Download het declaratieformulier</p>
-                      <p className="text-xs text-gray-500 mt-0.5">Excel in het DE UNIE template</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleExport}
-                    disabled={exporting}
-                    className="w-full py-3 rounded-xl bg-primary-600 text-white font-semibold hover:bg-primary-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-                  >
-                    {exporting ? (
-                      <><Loader2 size={18} className="animate-spin" /> Bestand maken...</>
-                    ) : exported ? (
-                      <><CheckCircle size={18} /> Opnieuw downloaden</>
-                    ) : (
-                      <><Download size={18} /> Download Excel</>
-                    )}
-                  </button>
-                  {exported && (
-                    <div className="flex items-center gap-2 text-green-600 text-xs">
-                      <CheckCircle size={14} />
-                      <span>Declaratieformulier gedownload</span>
-                    </div>
+              {/* Submit button */}
+              <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
+                <p className="text-sm text-gray-600">
+                  Er wordt een e-mail gestuurd met het DE UNIE declaratieformulier als Excel-bijlage.
+                </p>
+                <button
+                  onClick={handleSubmit}
+                  disabled={submitting}
+                  className="w-full py-4 rounded-xl bg-green-500 text-white font-bold text-lg hover:bg-green-600 disabled:opacity-50 transition-colors shadow-md flex items-center justify-center gap-2"
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 size={22} className="animate-spin" />
+                      Versturen...
+                    </>
+                  ) : (
+                    <>
+                      <Send size={22} />
+                      Indienen per e-mail
+                    </>
                   )}
-                </div>
-
-                {/* Step 2: Email */}
-                <div className="space-y-3 pt-2 border-t border-gray-100">
-                  <div className="flex items-start gap-3">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${exported ? 'bg-primary-600 text-white' : 'bg-gray-200 text-gray-400'}`}>2</div>
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900 text-sm">Open je e-mail</p>
-                      <p className="text-xs text-gray-500 mt-0.5">Voeg het Excel-bestand als bijlage toe.</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleOpenEmail}
-                    disabled={!exported}
-                    className="w-full py-3 rounded-xl border-2 border-primary-600 text-primary-600 font-semibold hover:bg-primary-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Mail size={18} />
-                    Open e-mail
-                  </button>
-                </div>
-
-                {/* Step 3: Mark as sent */}
-                {exported && (
-                  <div className="space-y-3 pt-2 border-t border-gray-100">
-                    <div className="flex items-start gap-3">
-                      <div className="w-7 h-7 rounded-full bg-primary-600 text-white flex items-center justify-center text-sm font-bold shrink-0">3</div>
-                      <div className="flex-1">
-                        <p className="font-medium text-gray-900 text-sm">Heb je de e-mail verstuurd?</p>
-                        <p className="text-xs text-gray-500 mt-0.5">Markeer als ingediend</p>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        onClick={handleMarkSent}
-                        disabled={submitting}
-                        className="py-3 rounded-xl bg-green-500 text-white font-semibold hover:bg-green-600 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-                      >
-                        {submitting ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle size={18} />}
-                        Ja, verstuurd!
-                      </button>
-                      <button
-                        onClick={() => setExported(false)}
-                        className="py-3 rounded-xl border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
-                      >
-                        Later doen
-                      </button>
-                    </div>
-                  </div>
-                )}
+                </button>
               </div>
             </>
+          )}
+
+          {/* Already submitted expenses */}
+          {submittedExpenses.length > 0 && (
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-green-100">
+              <div className="flex items-center gap-2 mb-3">
+                <CheckCircle size={18} className="text-green-500" />
+                <h3 className="font-bold text-gray-900">Al ingediend</h3>
+              </div>
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <div className="bg-green-50 rounded-xl p-3 text-center">
+                  <p className="text-xl font-bold text-green-700">{submittedExpenses.length}</p>
+                  <p className="text-xs text-green-500">ritten</p>
+                </div>
+                <div className="bg-green-50 rounded-xl p-3 text-center">
+                  <p className="text-xl font-bold text-green-700">{submittedKm}</p>
+                  <p className="text-xs text-green-500">km</p>
+                </div>
+                <div className="bg-green-50 rounded-xl p-3 text-center">
+                  <p className="text-xl font-bold text-green-700">{formatEuro(submittedTotal)}</p>
+                  <p className="text-xs text-green-500">totaal</p>
+                </div>
+              </div>
+              <details>
+                <summary className="text-sm text-green-600 font-medium cursor-pointer hover:text-green-700">
+                  Bekijk ingediende declaraties
+                </summary>
+                <div className="mt-3 space-y-2">
+                  {submittedExpenses.map((e) => (
+                    <div key={e.id} className="opacity-70">
+                      <TravelCard expense={e} />
+                    </div>
+                  ))}
+                </div>
+              </details>
+            </div>
           )}
         </>
       )}
