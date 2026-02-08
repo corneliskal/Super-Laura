@@ -1,4 +1,7 @@
 import { useState, useEffect } from 'react'
+// GEDEACTIVEERD: Link en Sparkles waren voor Superheld Avatar feature
+// import { Link } from 'react-router-dom'
+// import { Sparkles } from 'lucide-react'
 import { Save } from 'lucide-react'
 import { useSettings } from '@/hooks/useSettings'
 import { useToast } from '@/components/ui/Toast'
@@ -28,6 +31,7 @@ export function SettingsPage() {
       await saveSettings({
         recipientEmail: recipientEmail.trim(),
         employeeName: employeeName.trim(),
+        avatarUrl: settings.avatarUrl,
       })
       showToast('success', 'Instellingen opgeslagen')
     } catch (err) {
@@ -93,6 +97,34 @@ export function SettingsPage() {
           {saving ? 'Opslaan...' : 'Opslaan'}
         </button>
       </div>
+
+      {/* GEDEACTIVEERD: Superheld Avatar feature (geparkeerd)
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mt-4">
+        <h3 className="text-sm font-medium text-gray-700 mb-3">Superheld Avatar</h3>
+        <div className="flex items-center gap-4">
+          <img
+            src={settings.avatarUrl || '/logo.png'}
+            alt="Avatar"
+            className={`w-16 h-16 ${settings.avatarUrl ? 'rounded-full border-2 border-purple-200' : ''} object-cover`}
+          />
+          <div className="flex-1">
+            <p className="text-xs text-gray-500 mb-2">
+              {settings.avatarUrl
+                ? 'Je hebt een persoonlijke superheld-avatar'
+                : 'Je gebruikt het standaard logo'
+              }
+            </p>
+            <Link
+              to="/onboarding"
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-sm font-medium rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all"
+            >
+              <Sparkles size={14} />
+              {settings.avatarUrl ? 'Avatar opnieuw maken' : 'Avatar maken'}
+            </Link>
+          </div>
+        </div>
+      </div>
+      */}
     </div>
   )
 }

@@ -6,11 +6,13 @@ import { RECIPIENT_EMAIL, EMPLOYEE_NAME } from '@/lib/constants'
 export interface UserSettings {
   recipientEmail: string
   employeeName: string
+  avatarUrl: string
 }
 
 const DEFAULTS: UserSettings = {
   recipientEmail: RECIPIENT_EMAIL,
   employeeName: EMPLOYEE_NAME,
+  avatarUrl: '',
 }
 
 function getSettingsDocRef() {
@@ -37,6 +39,7 @@ export function useSettings() {
         setSettings({
           recipientEmail: (data.recipientEmail as string) || DEFAULTS.recipientEmail,
           employeeName: (data.employeeName as string) || DEFAULTS.employeeName,
+          avatarUrl: (data.avatarUrl as string) || DEFAULTS.avatarUrl,
         })
       }
     } catch (err) {
@@ -57,6 +60,7 @@ export function useSettings() {
     await setDoc(ref, {
       recipientEmail: newSettings.recipientEmail,
       employeeName: newSettings.employeeName,
+      avatarUrl: newSettings.avatarUrl || '',
     })
 
     setSettings(newSettings)

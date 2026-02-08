@@ -12,6 +12,8 @@ import { ReceiptDetailPage } from '@/pages/ReceiptDetailPage'
 import { TravelOverviewPage } from '@/pages/TravelOverviewPage'
 import { AddTravelPage } from '@/pages/AddTravelPage'
 import { SettingsPage } from '@/pages/SettingsPage'
+// GEDEACTIVEERD: Superheld Avatar feature (geparkeerd)
+// import { OnboardingPage } from '@/pages/OnboardingPage'
 
 export default function App() {
   return (
@@ -25,6 +27,10 @@ export default function App() {
 
             {/* Beschermde routes */}
             <Route element={<ProtectedRoute />}>
+              {/* GEDEACTIVEERD: Superheld Avatar onboarding (geparkeerd)
+              <Route path="/onboarding" element={<OnboardingPage />} />
+              */}
+
               <Route element={<AppShell />}>
                 <Route path="/" element={<HomePage />} />
 

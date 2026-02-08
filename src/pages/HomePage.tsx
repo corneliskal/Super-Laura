@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Receipt, Car, Settings } from 'lucide-react'
+// GEDEACTIVEERD: Superheld Avatar feature (geparkeerd)
+// import { useSettings } from '@/hooks/useSettings'
 
 const tiles = [
   {

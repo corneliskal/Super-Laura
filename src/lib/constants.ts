@@ -10,6 +10,7 @@ export const THUMBNAIL_SIZE = 200
 export const OCR_FUNCTION_URL = 'https://europe-west1-super-laura-fb40a.cloudfunctions.net/analyzeReceipt'
 export const SUBMIT_RECEIPTS_URL = 'https://europe-west1-super-laura-fb40a.cloudfunctions.net/submitReceipts'
 export const SUBMIT_TRAVEL_URL = 'https://europe-west1-super-laura-fb40a.cloudfunctions.net/submitTravel'
+export const GENERATE_AVATAR_URL = 'https://europe-west1-super-laura-fb40a.cloudfunctions.net/generateAvatar'
 
 // Travel expense constants
 export const EMPLOYEE_NAME = 'Laura Favata'

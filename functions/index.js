@@ -452,6 +452,196 @@ exports.submitTravel = functions
   });
 
 // =============================================================
+// generateAvatar — Gemini image generation for superhero avatar
+// =============================================================
+exports.generateAvatar = functions
+  .region("europe-west1")
+  .runWith({ timeoutSeconds: 120, memory: "512MB" })
+  .https.onRequest((req, res) => {
+    handleCors(req, res, async (req, res) => {
+      if (req.method !== "POST") {
+        res.status(405).json({ error: "Method not allowed" });
+        return;
+      }
+
+      // Verify auth
+      const decodedToken = await verifyAuth(req);
+      if (!decodedToken) {
+        res.status(401).json({ error: "Niet ingelogd" });
+        return;
+      }
+      const userId = decodedToken.uid;
+
+      try {
+        const { faceImage, superhero } = req.body;
+
+        if (!faceImage || !superhero) {
+          res.status(400).json({ error: "faceImage and superhero are required" });
+          return;
+        }
+
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) {
+          res.status(500).json({ error: "Gemini API key not configured" });
+          return;
+        }
+
+        console.log(`Generating avatar for user ${userId}, superhero: ${superhero}`);
+
+        // Parse base64 image
+        let base64Data = faceImage;
+        let mimeType = "image/jpeg";
+        if (faceImage.startsWith("data:")) {
+          const imgParts = faceImage.split(",");
+          base64Data = imgParts[1];
+          const mimeMatch = imgParts[0].match(/data:([^;]+)/);
+          if (mimeMatch) mimeType = mimeMatch[1];
+        }
+
+        // Use new @google/genai SDK for image generation
+        const { GoogleGenAI } = require("@google/genai");
+        const ai = new GoogleGenAI({ apiKey });
+
+        const prompt = `Create a fun cartoon superhero character portrait in comic-book style.
+The character is inspired by ${superhero} — wearing a similar costume, colors, and iconic style elements.
+Look at the reference photo to match the person's general appearance traits like hair color, hair style, skin tone, and face shape, then draw the character in a friendly cartoon style.
+Requirements:
+- Square format, 1:1 aspect ratio
+- Head and shoulders portrait only
+- Simple solid color or gradient background
+- Vibrant colors, bold outlines, comic-book aesthetic
+- Friendly, heroic, and approachable expression
+- Suitable as a small app icon/avatar (clear at 128x128 pixels)
+- Fun and family-friendly`;
+
+        // Helper to attempt generation (with or without face photo)
+        async function attemptGeneration(includePhoto) {
+          const contents = includePhoto
+            ? [
+                { text: prompt },
+                { inlineData: { mimeType: mimeType, data: base64Data } },
+              ]
+            : prompt;
+
+          console.log(`Attempting avatar generation ${includePhoto ? "WITH" : "WITHOUT"} face photo`);
+
+          const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash-image",
+            contents: contents,
+            config: {
+              responseModalities: ["Text", "Image"],
+            },
+          });
+
+          // Log response structure for debugging
+          console.log("Response keys:", Object.keys(response || {}));
+          if (response.candidates) {
+            console.log("Candidates count:", response.candidates.length);
+            for (let ci = 0; ci < response.candidates.length; ci++) {
+              const c = response.candidates[ci];
+              console.log(`Candidate[${ci}] finishReason:`, c.finishReason);
+              console.log(`Candidate[${ci}] has content:`, !!c.content);
+              if (c.safetyRatings) {
+                console.log(`Candidate[${ci}] safetyRatings:`, JSON.stringify(c.safetyRatings));
+              }
+              if (c.content && c.content.parts) {
+                console.log(`Candidate[${ci}] parts count:`, c.content.parts.length);
+                c.content.parts.forEach((p, pi) => {
+                  console.log(`  Part[${pi}]: text=${!!p.text}, inlineData=${p.inlineData ? p.inlineData.mimeType : "none"}`);
+                });
+              }
+            }
+          } else {
+            console.log("No candidates in response");
+            if (response.promptFeedback) {
+              console.log("promptFeedback:", JSON.stringify(response.promptFeedback));
+            }
+          }
+
+          return response;
+        }
+
+        // Try with face photo first
+        let response = await attemptGeneration(true);
+
+        // Check if we got a valid response with image content
+        let imagePart = null;
+        if (response.candidates && response.candidates.length > 0) {
+          const candidate = response.candidates[0];
+          if (candidate.content && candidate.content.parts) {
+            imagePart = candidate.content.parts.find(
+              (p) => p.inlineData && p.inlineData.mimeType && p.inlineData.mimeType.startsWith("image/")
+            );
+          } else {
+            console.warn("Candidate has no content/parts (possible safety block). finishReason:", candidate.finishReason);
+          }
+        }
+
+        // FALLBACK: If no image from first attempt, try without face photo
+        if (!imagePart) {
+          console.log("First attempt failed to produce image. Trying fallback without face photo...");
+          response = await attemptGeneration(false);
+
+          if (response.candidates && response.candidates.length > 0) {
+            const candidate = response.candidates[0];
+            if (candidate.content && candidate.content.parts) {
+              imagePart = candidate.content.parts.find(
+                (p) => p.inlineData && p.inlineData.mimeType && p.inlineData.mimeType.startsWith("image/")
+              );
+            }
+          }
+        }
+
+        if (!imagePart) {
+          console.error("Both attempts failed to produce an image");
+          res.status(500).json({ error: "Avatar generatie mislukt - Gemini kon geen afbeelding genereren. Probeer het later opnieuw." });
+          return;
+        }
+
+        console.log(`Avatar generated, mimeType: ${imagePart.inlineData.mimeType}, data length: ${imagePart.inlineData.data.length} chars`);
+
+        // Upload to Firebase Storage
+        const imageBuffer = Buffer.from(imagePart.inlineData.data, "base64");
+        const bucket = storage.bucket();
+        const avatarFile = bucket.file(`avatars/${userId}.png`);
+
+        await avatarFile.save(imageBuffer, {
+          metadata: {
+            contentType: imagePart.inlineData.mimeType || "image/png",
+            metadata: {
+              superhero: superhero,
+              generatedAt: new Date().toISOString(),
+            },
+          },
+        });
+
+        // Make the file publicly readable
+        await avatarFile.makePublic();
+
+        // Get public URL (add cache-buster to avoid stale cache)
+        const avatarUrl = `https://storage.googleapis.com/${bucket.name}/avatars/${userId}.png?t=${Date.now()}`;
+
+        // Save avatar URL in user settings
+        await db.collection("users").doc(userId).collection("settings").doc("profile").set(
+          { avatarUrl: avatarUrl },
+          { merge: true }
+        );
+
+        console.log(`Avatar saved for user ${userId}: ${avatarUrl}`);
+
+        res.status(200).json({
+          success: true,
+          avatarUrl: avatarUrl,
+        });
+      } catch (error) {
+        console.error("generateAvatar error:", error);
+        console.error("Error stack:", error.stack);
+        res.status(500).json({ error: "Avatar generatie mislukt: " + error.message });
+      }
+    });
+  });
+
+// =============================================================
 // Helper: Shift cells down in a worksheet by a number of rows
 // Moves all cells from startRow onwards down by shiftAmount rows
 // =============================================================
