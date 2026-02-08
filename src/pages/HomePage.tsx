@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Receipt, Car, Settings } from 'lucide-react'
+import { Receipt, Car } from 'lucide-react'
 // GEDEACTIVEERD: Superheld Avatar feature (geparkeerd)
 // import { useSettings } from '@/hooks/useSettings'
 
@@ -19,14 +19,6 @@ const tiles = [
     icon: Car,
     gradient: 'from-emerald-500 to-emerald-600',
     iconBg: 'bg-emerald-400/30',
-  },
-  {
-    to: '/instellingen',
-    label: 'Instellingen',
-    description: 'E-mail adres & persoonlijke gegevens',
-    icon: Settings,
-    gradient: 'from-gray-500 to-gray-600',
-    iconBg: 'bg-gray-400/30',
   },
 ]
 

@@ -50,7 +50,7 @@ export function AddReceiptPage() {
     try {
       await createReceipt(formData, imageBlob, ocrResult?.raw_text)
       showToast('success', 'Bonnetje opgeslagen! 🎉')
-      navigate('/')
+      navigate('/bonnetjes')
     } catch (err) {
       console.error('Save error:', err)
       showToast('error', 'Kon bonnetje niet opslaan. Probeer opnieuw.')
