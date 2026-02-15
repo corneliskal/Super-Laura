@@ -2,39 +2,34 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Receipts
+    // Receipts - only own data
     match /receipts/{receiptId} {
-      allow read: if request.auth != null;
+      allow read, update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if request.auth != null;
     }
 
-    // Submissions
+    // Submissions - only own data
     match /submissions/{submissionId} {
-      allow read: if request.auth != null;
+      allow read, update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if request.auth != null;
     }
 
-    // Travel expenses
+    // Travel expenses - only own data
     match /travel_expenses/{expenseId} {
-      allow read: if request.auth != null;
+      allow read, update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if request.auth != null;
     }
 
-    // Management fee invoices
+    // Management fee invoices - only own data
     match /management_fee_invoices/{invoiceId} {
-      allow read: if request.auth != null;
+      allow read, update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if request.auth != null;
     }
 
-    // Travel submissions
+    // Travel submissions - only own data
     match /travel_submissions/{submissionId} {
-      allow read: if request.auth != null;
+      allow read, update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if request.auth != null;
     }
 
     // User settings (per-user subcollection)

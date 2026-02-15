@@ -99,11 +99,14 @@ export function useReceipts() {
     ocrRawText?: string
   ): Promise<Receipt | null> => {
     try {
+      const userId = auth.currentUser?.uid
+      if (!userId) throw new Error('Niet ingelogd')
+
       const tempId = crypto.randomUUID()
       const isPdf = photoBlob.type === 'application/pdf'
       const extension = isPdf ? 'pdf' : 'jpg'
       const contentType = isPdf ? 'application/pdf' : 'image/jpeg'
-      const photoPath = generatePhotoPath(tempId, extension)
+      const photoPath = generatePhotoPath(tempId, extension, userId)
 
       // Upload file to Firebase Storage
       const storageRef = ref(storage, `receipt-photos/${photoPath}`)
@@ -111,10 +114,6 @@ export function useReceipts() {
 
       // Get download URL
       const photoUrl = await getDownloadURL(storageRef)
-
-      // Create receipt document in Firestore
-      const userId = auth.currentUser?.uid
-      if (!userId) throw new Error('Niet ingelogd')
 
       const now = new Date().toISOString()
       const receiptData = {
