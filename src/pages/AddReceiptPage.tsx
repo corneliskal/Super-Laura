@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { CameraCapture } from '@/components/receipt/CameraCapture'
 import { OcrStatus } from '@/components/receipt/OcrStatus'
@@ -13,23 +13,26 @@ import type { ReceiptFormData } from '@/types/receipt'
 
 export function AddReceiptPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const navState = location.state as { month?: number; year?: number } | null
   const { showToast } = useToast()
-  const { imageBlob, previewUrl, capturing, handleCapture, reset: resetImage } = useImageCapture()
+  const { imageBlob, previewUrl, capturing, isPdf, handleCapture, reset: resetImage } = useImageCapture()
   const { ocrResult, processing: ocrProcessing, error: ocrError, processImage, reset: resetOcr } = useOcr()
   const { createReceipt } = useReceipts()
   const [saving, setSaving] = useState(false)
   const [step, setStep] = useState<'capture' | 'form'>('capture')
 
   const onImageCaptured = useCallback(async (file: File) => {
-    const compressed = await compressImage(file)
     handleCapture(file)
 
-    // Start OCR processing
-    const result = await processImage(compressed)
-    if (result) {
+    if (file.type === 'application/pdf') {
+      // PDF: send directly to OCR (Gemini can read PDFs)
+      await processImage(file)
       setStep('form')
     } else {
-      // Even if OCR fails, show the form for manual entry
+      // Image: compress and run OCR
+      const compressed = await compressImage(file)
+      await processImage(compressed)
       setStep('form')
     }
   }, [handleCapture, processImage])
@@ -42,7 +45,7 @@ export function AddReceiptPage() {
 
   const onSubmitForm = useCallback(async (formData: ReceiptFormData) => {
     if (!imageBlob) {
-      showToast('error', 'Geen foto gevonden. Maak eerst een foto.')
+      showToast('error', 'Geen bestand gevonden. Upload eerst een foto of PDF.')
       return
     }
 
@@ -50,7 +53,9 @@ export function AddReceiptPage() {
     try {
       await createReceipt(formData, imageBlob, ocrResult?.raw_text)
       showToast('success', 'Bonnetje opgeslagen! 🎉')
-      navigate('/bonnetjes')
+      navigate('/bonnetjes', {
+        state: navState ? { month: navState.month, year: navState.year } : undefined,
+      })
     } catch (err) {
       console.error('Save error:', err)
       showToast('error', 'Kon bonnetje niet opslaan. Probeer opnieuw.')
@@ -82,10 +87,11 @@ export function AddReceiptPage() {
         }`} />
       </div>
 
-      {/* Camera capture */}
+      {/* Camera / file capture */}
       <CameraCapture
         onImageCaptured={onImageCaptured}
         previewUrl={previewUrl}
+        isPdf={isPdf}
         onRetake={onRetake}
         capturing={capturing}
       />
@@ -103,6 +109,8 @@ export function AddReceiptPage() {
       {step === 'form' && (
         <ReceiptForm
           initialData={ocrResult?.parsed}
+          defaultMonth={navState?.month}
+          defaultYear={navState?.year}
           onSubmit={onSubmitForm}
           saving={saving}
         />

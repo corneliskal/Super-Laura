@@ -5,15 +5,16 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { AppShell } from '@/components/layout/AppShell'
 import { LoginPage } from '@/pages/LoginPage'
 import { RegisterPage } from '@/pages/RegisterPage'
+import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
 import { HomePage } from '@/pages/HomePage'
 import { AddReceiptPage } from '@/pages/AddReceiptPage'
 import { ReceiptsOverviewPage } from '@/pages/ReceiptsOverviewPage'
 import { ReceiptDetailPage } from '@/pages/ReceiptDetailPage'
 import { TravelOverviewPage } from '@/pages/TravelOverviewPage'
 import { AddTravelPage } from '@/pages/AddTravelPage'
+import { TravelDetailPage } from '@/pages/TravelDetailPage'
 import { SettingsPage } from '@/pages/SettingsPage'
-// GEDEACTIVEERD: Superheld Avatar feature (geparkeerd)
-// import { OnboardingPage } from '@/pages/OnboardingPage'
+import { VerifyEmailPage } from '@/pages/VerifyEmailPage'
 
 export default function App() {
   return (
@@ -24,12 +25,12 @@ export default function App() {
             {/* Publieke routes */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/registreren" element={<RegisterPage />} />
+            <Route path="/wachtwoord-vergeten" element={<ForgotPasswordPage />} />
 
             {/* Beschermde routes */}
             <Route element={<ProtectedRoute />}>
-              {/* GEDEACTIVEERD: Superheld Avatar onboarding (geparkeerd)
-              <Route path="/onboarding" element={<OnboardingPage />} />
-              */}
+              {/* Auth flow routes - no AppShell */}
+              <Route path="/verify-email" element={<VerifyEmailPage />} />
 
               <Route element={<AppShell />}>
                 <Route path="/" element={<HomePage />} />
@@ -42,6 +43,7 @@ export default function App() {
                 {/* Reiskosten (Travel expenses) */}
                 <Route path="/reiskosten" element={<TravelOverviewPage />} />
                 <Route path="/reiskosten/nieuw" element={<AddTravelPage />} />
+                <Route path="/reiskosten/:id" element={<TravelDetailPage />} />
 
                 {/* Instellingen (Settings) */}
                 <Route path="/instellingen" element={<SettingsPage />} />

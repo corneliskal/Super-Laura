@@ -2,6 +2,7 @@ export interface Receipt {
   id: string
   photo_path: string
   photo_url?: string
+  file_type?: 'image' | 'pdf'
   store_name: string
   description: string
   amount: number

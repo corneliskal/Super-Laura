@@ -59,7 +59,7 @@ export function RegisterPage() {
           <img
             src="/logo.png"
             alt="Super-Laura"
-            className="w-24 h-24 mx-auto drop-shadow-lg"
+            className="h-24 mx-auto drop-shadow-lg object-contain"
           />
           <h1 className="mt-3 text-xl font-bold text-gray-900">{APP_NAME}</h1>
           <p className="text-gray-500 text-sm mt-1">Maak een nieuw account aan</p>
@@ -114,6 +114,10 @@ export function RegisterPage() {
               className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
             />
           </div>
+
+          <p className="text-xs text-gray-500 text-center">
+            Na registratie ontvang je een verificatie-e-mail om je account te activeren
+          </p>
 
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">

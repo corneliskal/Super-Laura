@@ -1,5 +1,5 @@
 export const RECIPIENT_EMAIL = 'corneliskalma@gmail.com'
-export const APP_NAME = 'Super Laura Companion App'
+export const APP_NAME = 'De Unie Companion App'
 export const USER_NAME = 'Laura'
 
 export const MAX_IMAGE_WIDTH = 1200
@@ -11,6 +11,7 @@ export const OCR_FUNCTION_URL = 'https://europe-west1-super-laura-fb40a.cloudfun
 export const SUBMIT_RECEIPTS_URL = 'https://europe-west1-super-laura-fb40a.cloudfunctions.net/submitReceipts'
 export const SUBMIT_TRAVEL_URL = 'https://europe-west1-super-laura-fb40a.cloudfunctions.net/submitTravel'
 export const GENERATE_AVATAR_URL = 'https://europe-west1-super-laura-fb40a.cloudfunctions.net/generateAvatar'
+export const SEND_VERIFICATION_EMAIL_URL = 'https://europe-west1-super-laura-fb40a.cloudfunctions.net/sendVerificationEmail'
 
 // Travel expense constants
 export const EMPLOYEE_NAME = 'Laura Favata'

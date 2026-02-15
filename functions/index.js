@@ -2,8 +2,7 @@ const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const nodemailer = require("nodemailer");
-const XLSX = require("xlsx");
-const path = require("path");
+const PDFDocument = require("pdfkit");
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -39,20 +38,66 @@ async function verifyAuth(req) {
 }
 
 // =============================================================
-// Gmail transporter (reused across function invocations)
+// Helper to get config from process.env or functions.config()
+// =============================================================
+function getConfig(key) {
+  // First try process.env (for local .env files)
+  if (process.env[key]) {
+    return process.env[key];
+  }
+  // Then try functions.config() (for deployed functions)
+  const config = functions.config();
+  const parts = key.toLowerCase().split('_');
+  if (parts.length === 2) {
+    const [section, name] = parts;
+    return config[section]?.[name];
+  }
+  return null;
+}
+
+// =============================================================
+// Email transporter (Strato SMTP with Gmail fallback)
 // =============================================================
 let transporter = null;
 function getTransporter() {
   if (!transporter) {
-    transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.GMAIL_EMAIL,
-        pass: process.env.GMAIL_APP_PASSWORD,
-      },
-    });
+    // Check if Strato SMTP is configured, otherwise fall back to Gmail
+    const smtpHost = getConfig('SMTP_HOST');
+    const smtpUser = getConfig('SMTP_USER');
+    const useStrato = smtpHost && smtpUser;
+
+    if (useStrato) {
+      console.log("Using Strato SMTP:", smtpHost, smtpUser);
+      transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: parseInt(getConfig('SMTP_PORT') || "587"),
+        secure: getConfig('SMTP_SECURE') === "true", // true for 465, false for other ports
+        auth: {
+          user: smtpUser,
+          pass: getConfig('SMTP_PASS'),
+        },
+      });
+    } else {
+      console.log("Using Gmail SMTP (fallback)");
+      // Fallback to Gmail
+      transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+          user: getConfig('GMAIL_EMAIL') || process.env.GMAIL_EMAIL,
+          pass: getConfig('GMAIL_APP_PASSWORD') || process.env.GMAIL_APP_PASSWORD,
+        },
+      });
+    }
   }
   return transporter;
+}
+
+// =============================================================
+// Get web app URL from environment or fallback to production
+// =============================================================
+function getWebAppUrl(path = '') {
+  const baseUrl = getConfig('WEBAPP_URL') || process.env.WEBAPP_URL || 'https://super-laura-fb40a.web.app';
+  return path ? `${baseUrl}${path}` : baseUrl;
 }
 
 // =============================================================
@@ -110,7 +155,7 @@ exports.analyzeReceipt = functions
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
-        const prompt = `Analyseer deze foto van een bonnetje of factuur. Extract de volgende informatie en geef het terug als JSON:
+        const prompt = `Analyseer deze foto of PDF van een bonnetje, factuur of declaratie. Extract de volgende informatie en geef het terug als JSON:
 
 {
   "store_name": "naam van de winkel of leverancier",
@@ -188,7 +233,201 @@ Regels:
   });
 
 // =============================================================
-// submitReceipts — Email bonnetjes with Excel + photos
+// sendVerificationEmail — Send custom verification email via Gmail
+// =============================================================
+exports.sendVerificationEmail = functions
+  .region("europe-west1")
+  .https.onRequest((req, res) => {
+    handleCors(req, res, async (req, res) => {
+      if (req.method !== "POST") {
+        res.status(405).json({ error: "Method not allowed" });
+        return;
+      }
+
+      // Verify auth
+      const decodedToken = await verifyAuth(req);
+      if (!decodedToken) {
+        res.status(401).json({ error: "Niet ingelogd" });
+        return;
+      }
+      const userId = decodedToken.uid;
+      const userEmail = decodedToken.email;
+
+      try {
+        // Generate random verification token
+        const token = require("crypto").randomBytes(32).toString("hex");
+
+        // Store token in Firestore with 24h expiry
+        await db.collection("email_verifications").doc(userId).set({
+          token: token,
+          email: userEmail,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 24 * 60 * 60 * 1000),
+          verified: false,
+        });
+
+        // Build verification URL
+        const verifyUrl = `https://europe-west1-super-laura-fb40a.cloudfunctions.net/verifyEmail?token=${token}&uid=${userId}`;
+
+        // Send email via Gmail
+        const mail = getTransporter();
+        await mail.sendMail({
+          from: `"${getConfig('FROM_NAME') || 'De Unie Companion App'}" <${getConfig('FROM_EMAIL') || getConfig('GMAIL_EMAIL') || 'corneliskalma@gmail.com'}>`,
+          to: userEmail,
+          subject: "Bevestig je e-mailadres - De Unie Companion App",
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #7c3aed;">Bevestig je e-mailadres</h2>
+              <p>Welkom bij De Unie Companion App!</p>
+              <p>Klik op de knop hieronder om je e-mailadres te bevestigen:</p>
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${verifyUrl}" style="background-color: #7c3aed; color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; display: inline-block;">
+                  Bevestig e-mailadres
+                </a>
+              </div>
+              <p style="color: #666; font-size: 14px;">Of kopieer deze link in je browser:</p>
+              <p style="color: #666; font-size: 12px; word-break: break-all;">${verifyUrl}</p>
+              <p style="color: #666; font-size: 12px; margin-top: 30px;">
+                Deze link is 24 uur geldig. Als je geen account hebt aangemaakt, kun je deze e-mail negeren.
+              </p>
+            </div>
+          `,
+        });
+
+        console.log(`Verification email sent to ${userEmail} for user ${userId}`);
+
+        res.status(200).json({
+          success: true,
+          message: "Verificatie-e-mail verstuurd",
+        });
+      } catch (error) {
+        console.error("sendVerificationEmail error:", error);
+        res.status(500).json({ error: "Kon e-mail niet versturen: " + error.message });
+      }
+    });
+  });
+
+// =============================================================
+// verifyEmail — Verify email token and redirect
+// =============================================================
+exports.verifyEmail = functions
+  .region("europe-west1")
+  .https.onRequest(async (req, res) => {
+    const token = req.query.token;
+    const uid = req.query.uid;
+
+    if (!token || !uid) {
+      res.status(400).send(`
+        <html>
+          <body style="font-family: Arial; text-align: center; padding: 50px;">
+            <h2>❌ Ongeldige verificatielink</h2>
+            <p>Deze link is niet geldig.</p>
+          </body>
+        </html>
+      `);
+      return;
+    }
+
+    try {
+      // Get verification doc
+      const doc = await db.collection("email_verifications").doc(uid).get();
+
+      if (!doc.exists) {
+        res.status(404).send(`
+          <html>
+            <body style="font-family: Arial; text-align: center; padding: 50px;">
+              <h2>❌ Verificatielink niet gevonden</h2>
+              <p>Deze verificatielink bestaat niet.</p>
+            </body>
+          </html>
+        `);
+        return;
+      }
+
+      const data = doc.data();
+
+      // Check if already verified
+      if (data.verified) {
+        res.status(200).send(`
+          <html>
+            <body style="font-family: Arial; text-align: center; padding: 50px;">
+              <h2>✅ Al geverifieerd</h2>
+              <p>Je e-mailadres is al eerder geverifieerd.</p>
+              <p><a href="${getWebAppUrl()}" style="color: #7c3aed;">Ga naar de app →</a></p>
+            </body>
+          </html>
+        `);
+        return;
+      }
+
+      // Check if token matches
+      if (data.token !== token) {
+        res.status(403).send(`
+          <html>
+            <body style="font-family: Arial; text-align: center; padding: 50px;">
+              <h2>❌ Ongeldige token</h2>
+              <p>Deze verificatielink is niet geldig.</p>
+            </body>
+          </html>
+        `);
+        return;
+      }
+
+      // Check if expired
+      const now = admin.firestore.Timestamp.now();
+      if (now.toMillis() > data.expiresAt.toMillis()) {
+        res.status(410).send(`
+          <html>
+            <body style="font-family: Arial; text-align: center; padding: 50px;">
+              <h2>⏰ Link verlopen</h2>
+              <p>Deze verificatielink is verlopen. Vraag een nieuwe aan in de app.</p>
+              <p><a href="${getWebAppUrl('/verify-email')}" style="color: #7c3aed;">Naar verificatiepagina →</a></p>
+            </body>
+          </html>
+        `);
+        return;
+      }
+
+      // Mark as verified
+      await db.collection("email_verifications").doc(uid).update({
+        verified: true,
+        verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      console.log(`Email verified for user ${uid}`);
+
+      // Success page with redirect
+      res.status(200).send(`
+        <html>
+          <body style="font-family: Arial; text-align: center; padding: 50px;">
+            <h2 style="color: #10b981;">✅ E-mail geverifieerd!</h2>
+            <p>Je e-mailadres is succesvol bevestigd.</p>
+            <p>Je wordt doorgestuurd naar de app...</p>
+            <script>
+              setTimeout(function() {
+                window.location.href = '${getWebAppUrl()}';
+              }, 3000);
+            </script>
+            <p><a href="${getWebAppUrl()}" style="color: #7c3aed;">Klik hier als je niet automatisch wordt doorgestuurd →</a></p>
+          </body>
+        </html>
+      `);
+    } catch (error) {
+      console.error("verifyEmail error:", error);
+      res.status(500).send(`
+        <html>
+          <body style="font-family: Arial; text-align: center; padding: 50px;">
+            <h2>❌ Fout opgetreden</h2>
+            <p>Er ging iets mis bij het verifiëren van je e-mail.</p>
+            <p>${error.message}</p>
+          </body>
+        </html>
+      `);
+    }
+  });
+
+// =============================================================
+// submitReceipts — Email bonnetjes with PDF + photos
 // =============================================================
 exports.submitReceipts = functions
   .region("europe-west1")
@@ -209,7 +448,7 @@ exports.submitReceipts = functions
       const userId = decodedToken.uid;
 
       try {
-        const { month, year, recipientEmail: reqRecipientEmail, employeeName: reqEmployeeName } = req.body;
+        const { month, year, recipientEmail: reqRecipientEmail, employeeName: reqEmployeeName, bankAccount: reqBankAccount } = req.body;
         if (!month || !year) {
           res.status(400).json({ error: "month and year required" });
           return;
@@ -217,6 +456,7 @@ exports.submitReceipts = functions
 
         const recipientEmail = reqRecipientEmail || RECIPIENT_EMAIL;
         const employeeName = reqEmployeeName || EMPLOYEE_NAME;
+        const bankAccount = reqBankAccount || BANK_ACCOUNT;
 
         const monthName = DUTCH_MONTHS[month - 1];
         console.log(`Submitting receipts for ${monthName} ${year}, user: ${userId}, to: ${recipientEmail}`);
@@ -242,10 +482,10 @@ exports.submitReceipts = functions
           return;
         }
 
-        // Generate Excel for receipts using official template
-        const excelBuffer = generateReceiptsExcel(receipts, month, year, monthName, employeeName, BANK_ACCOUNT);
+        // Generate PDF for receipts using DE UNIE template layout
+        const pdfBuffer = await generateReceiptsPdf(receipts, month, year, monthName, employeeName, bankAccount);
 
-        // Download photos from Storage
+        // Download photos/PDFs from Storage
         const photoAttachments = [];
         for (let i = 0; i < receipts.length; i++) {
           const r = receipts[i];
@@ -256,12 +496,14 @@ exports.submitReceipts = functions
               const [buffer] = await file.download();
               const dateStr = (r.receipt_date || "").replace(/-/g, "");
               const store = (r.store_name || "onbekend").replace(/[^a-zA-Z0-9]/g, "_");
+              const isPdf = r.file_type === 'pdf' || r.photo_path.endsWith('.pdf');
+              const ext = isPdf ? 'pdf' : 'jpg';
               photoAttachments.push({
-                filename: `${String(i + 1).padStart(2, "0")}_${store}_${dateStr}.jpg`,
+                filename: `${String(i + 1).padStart(2, "0")}_${store}_${dateStr}.${ext}`,
                 content: buffer,
               });
             } catch (err) {
-              console.warn(`Could not download photo for receipt ${r.id}:`, err.message);
+              console.warn(`Could not download file for receipt ${r.id}:`, err.message);
             }
           }
         }
@@ -269,8 +511,8 @@ exports.submitReceipts = functions
         // Build attachments array
         const attachments = [
           {
-            filename: `Bonnetjes_${monthName}_${year}.xlsx`,
-            content: Buffer.from(excelBuffer),
+            filename: `Bonnetjes_${monthName}_${year}.pdf`,
+            content: pdfBuffer,
           },
           ...photoAttachments,
         ];
@@ -280,8 +522,9 @@ exports.submitReceipts = functions
         // Send email
         const mail = getTransporter();
         await mail.sendMail({
-          from: `"Super Laura" <${process.env.GMAIL_EMAIL}>`,
+          from: `"${getConfig('FROM_NAME') || 'De Unie'}" <${getConfig('FROM_EMAIL') || getConfig('GMAIL_EMAIL') || 'corneliskalma@gmail.com'}>`,
           to: recipientEmail,
+          cc: decodedToken.email, // User krijgt altijd een kopie
           subject: `Bonnetjes ${monthName} ${year} - ${employeeName}`,
           html: `
             <h2>Bonnetjes ${monthName} ${year}</h2>
@@ -290,8 +533,8 @@ exports.submitReceipts = functions
               <tr><td style="padding:4px 12px 4px 0;"><strong>Aantal bonnetjes:</strong></td><td>${receipts.length}</td></tr>
               <tr><td style="padding:4px 12px 4px 0;"><strong>Totaal bedrag:</strong></td><td>€ ${totalAmount.toFixed(2)}</td></tr>
             </table>
-            <p>Bijlagen: Excel overzicht + ${photoAttachments.length} foto('s)</p>
-            <p style="color:#888;font-size:12px;">Verstuurd via Super Laura Companion App</p>
+            <p>Bijlagen: PDF overzicht + ${photoAttachments.length} bestand(en)</p>
+            <p style="color:#888;font-size:12px;">Verstuurd via De Unie Companion App</p>
           `,
           attachments,
         });
@@ -331,7 +574,7 @@ exports.submitReceipts = functions
   });
 
 // =============================================================
-// submitTravel — Email reiskosten with Excel attachment
+// submitTravel — Email reiskosten with PDF attachment
 // =============================================================
 exports.submitTravel = functions
   .region("europe-west1")
@@ -352,7 +595,7 @@ exports.submitTravel = functions
       const userId = decodedToken.uid;
 
       try {
-        const { month, year, recipientEmail: reqRecipientEmail, employeeName: reqEmployeeName } = req.body;
+        const { month, year, recipientEmail: reqRecipientEmail, employeeName: reqEmployeeName, bankAccount: reqBankAccount } = req.body;
         if (!month || !year) {
           res.status(400).json({ error: "month and year required" });
           return;
@@ -360,6 +603,7 @@ exports.submitTravel = functions
 
         const recipientEmail = reqRecipientEmail || RECIPIENT_EMAIL;
         const employeeName = reqEmployeeName || EMPLOYEE_NAME;
+        const bankAccount = reqBankAccount || BANK_ACCOUNT;
 
         const monthName = DUTCH_MONTHS[month - 1];
         console.log(`Submitting travel expenses for ${monthName} ${year}, user: ${userId}, to: ${recipientEmail}`);
@@ -384,8 +628,8 @@ exports.submitTravel = functions
           return;
         }
 
-        // Generate DE UNIE template Excel
-        const excelBuffer = generateTravelExcel(expenses, month, year, monthName, employeeName);
+        // Generate DE UNIE template PDF
+        const pdfBuffer = await generateTravelPdf(expenses, month, year, monthName, employeeName, bankAccount);
 
         const totalKm = expenses.reduce((sum, e) => sum + (e.kilometers || 0), 0);
         const totalReimbursement = expenses.reduce((sum, e) => sum + (e.total_reimbursement || 0), 0);
@@ -393,8 +637,9 @@ exports.submitTravel = functions
         // Send email
         const mail = getTransporter();
         await mail.sendMail({
-          from: `"Super Laura" <${process.env.GMAIL_EMAIL}>`,
+          from: `"${getConfig('FROM_NAME') || 'De Unie'}" <${getConfig('FROM_EMAIL') || getConfig('GMAIL_EMAIL') || 'corneliskalma@gmail.com'}>`,
           to: recipientEmail,
+          cc: decodedToken.email, // User krijgt altijd een kopie
           subject: `Declaratie reiskosten ${monthName} ${year} - ${employeeName}`,
           html: `
             <h2>Declaratie reiskosten ${monthName} ${year}</h2>
@@ -404,13 +649,13 @@ exports.submitTravel = functions
               <tr><td style="padding:4px 12px 4px 0;"><strong>Totaal kilometers:</strong></td><td>${totalKm} km</td></tr>
               <tr><td style="padding:4px 12px 4px 0;"><strong>Totale vergoeding:</strong></td><td>€ ${totalReimbursement.toFixed(2)}</td></tr>
             </table>
-            <p>Het declaratieformulier (DE UNIE template) is bijgevoegd als Excel-bestand.</p>
-            <p style="color:#888;font-size:12px;">Verstuurd via Super Laura Companion App</p>
+            <p>Het declaratieformulier (DE UNIE template) is bijgevoegd als PDF-bestand.</p>
+            <p style="color:#888;font-size:12px;">Verstuurd via De Unie Companion App</p>
           `,
           attachments: [
             {
-              filename: `Declaratie_${monthName}_${year}.xlsx`,
-              content: Buffer.from(excelBuffer),
+              filename: `Declaratie_${monthName}_${year}.pdf`,
+              content: pdfBuffer,
             },
           ],
         });
@@ -642,49 +887,6 @@ Requirements:
   });
 
 // =============================================================
-// Helper: Shift cells down in a worksheet by a number of rows
-// Moves all cells from startRow onwards down by shiftAmount rows
-// =============================================================
-function shiftRowsDown(ws, startRow, shiftAmount, maxCol) {
-  if (shiftAmount <= 0) return;
-
-  // Find the actual last row in the sheet
-  const ref = ws["!ref"];
-  if (!ref) return;
-  const range = XLSX.utils.decode_range(ref);
-  const lastRow = range.e.r;
-
-  // Work from bottom up to avoid overwriting
-  for (let r = lastRow; r >= startRow; r--) {
-    for (let c = 0; c <= maxCol; c++) {
-      const srcAddr = XLSX.utils.encode_cell({ r, c });
-      const dstAddr = XLSX.utils.encode_cell({ r: r + shiftAmount, c });
-      if (ws[srcAddr]) {
-        ws[dstAddr] = ws[srcAddr];
-        delete ws[srcAddr];
-      }
-    }
-  }
-
-  // Update merges
-  if (ws["!merges"]) {
-    ws["!merges"] = ws["!merges"].map((merge) => {
-      if (merge.s.r >= startRow) {
-        return {
-          s: { r: merge.s.r + shiftAmount, c: merge.s.c },
-          e: { r: merge.e.r + shiftAmount, c: merge.e.c },
-        };
-      }
-      return merge;
-    });
-  }
-
-  // Update sheet range
-  range.e.r = Math.max(range.e.r, lastRow + shiftAmount);
-  ws["!ref"] = XLSX.utils.encode_range(range);
-}
-
-// =============================================================
 // Helper: Format a date string "YYYY-MM-DD" as "D maand"
 // =============================================================
 function formatDateDutch(dateStr) {
@@ -696,201 +898,324 @@ function formatDateDutch(dateStr) {
 }
 
 // =============================================================
-// Helper: Generate receipts Excel using official template
+// Helper: Format number as Dutch euro string "€ 1.234,56"
 // =============================================================
-function generateReceiptsExcel(receipts, month, year, monthName, employeeName, bankAccount) {
-  const templatePath = path.join(__dirname, "templates", "bonnetjes-template.xlsx");
-  const wb = XLSX.readFile(templatePath);
-  const ws = wb.Sheets["Blad1"];
+function formatEuro(amount) {
+  return `\u20AC ${amount.toFixed(2).replace(".", ",")}`;
+}
 
+// =============================================================
+// Helper: Collect PDF stream into a Buffer (returns a Promise)
+// =============================================================
+function pdfToBuffer(doc) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    doc.on("data", (chunk) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+  });
+}
+
+// =============================================================
+// Helper: Draw a horizontal line across the page
+// =============================================================
+function drawLine(doc, y, x1, x2) {
+  doc.moveTo(x1, y).lineTo(x2, y).lineWidth(0.5).stroke("#999999");
+}
+
+// =============================================================
+// Helper: Generate receipts PDF matching DE UNIE template
+// =============================================================
+async function generateReceiptsPdf(receipts, month, year, monthName, employeeName, bankAccount) {
+  const doc = new PDFDocument({ size: "A4", margin: 50 });
+  const bufferPromise = pdfToBuffer(doc);
+
+  const LEFT = 50;
+  const RIGHT = 545;
+  const COL_DATE = LEFT;
+  const COL_DESC = 170;
+  const COL_AMOUNT = 440;
+
+  const now = new Date();
+  const todayStr = `${now.getDate()} ${DUTCH_MONTHS[now.getMonth()].toLowerCase()} ${now.getFullYear()}`;
+
+  // Title
+  doc.fontSize(16).font("Helvetica-Bold")
+    .text(`${COMPANY_NAME} declaratieformulier`, LEFT, 50);
+
+  // Employee info
+  let y = 85;
+  doc.fontSize(10).font("Helvetica");
+  doc.text(`medewerker: ${employeeName}`, LEFT, y);
+  y += 16;
+  doc.text(`bank/giro nummer: Priv\u00E9 rekening- ${bankAccount}`, LEFT, y);
+  y += 16;
+  doc.text(`datum: ${todayStr}`, LEFT, y);
+  y += 30;
+
+  // Column headers
+  drawLine(doc, y, LEFT, RIGHT);
+  y += 6;
+  doc.fontSize(9).font("Helvetica-Bold");
+  doc.text("datum", COL_DATE, y, { width: 110 });
+  doc.text("omschrijving", COL_DESC, y, { width: 260 });
+  doc.text("totale", COL_AMOUNT, y, { width: 95, align: "right" });
+  y += 13;
+  doc.text("", COL_DATE, y);
+  doc.text("", COL_DESC, y);
+  doc.text("vergoeding", COL_AMOUNT, y, { width: 95, align: "right" });
+  y += 15;
+  drawLine(doc, y, LEFT, RIGHT);
+  y += 8;
+
+  // Sort by date
   const sorted = [...receipts].sort(
     (a, b) => new Date(a.receipt_date).getTime() - new Date(b.receipt_date).getTime()
   );
 
-  // Template layout:
-  // Row 3 (idx 2): medewerker info (cell A3)
-  // Row 4 (idx 3): bank info (cell A4)
-  // Row 5 (idx 4): datum (cell A5)
-  // Rows 7-8: column headers (datum | omschrijving | totale vergoeding)
-  // Row 11-38 (idx 10-37): data rows (28 slots)
-  // Row 40 (idx 39): Subtotalen with SUM formula in C40
-  // Row 41 (idx 40): Af: evt. voorschot
-  // Row 42 (idx 41): TOTAAL
-  // Row 44+: handtekening, toelichting
+  // Data rows
+  doc.font("Helvetica").fontSize(9);
+  let totalAmount = 0;
+  for (const r of sorted) {
+    if (y > 680) {
+      doc.addPage();
+      y = 50;
+    }
+    const dateFormatted = formatDateDutch(r.receipt_date);
+    const description = [r.store_name, r.description].filter(Boolean).join(" - ");
+    const amount = r.amount || 0;
+    totalAmount += amount;
 
-  const DATA_START_ROW = 10;   // 0-indexed row 10 = Excel row 11
-  const TEMPLATE_DATA_SLOTS = 28;  // rows 11-38
-  const SUMMARY_START_ROW = 39; // 0-indexed row 39 = Excel row 40
-
-  // Calculate extra rows needed
-  const extraRows = Math.max(0, sorted.length - TEMPLATE_DATA_SLOTS);
-
-  // If we need more rows, shift the summary/footer section down
-  if (extraRows > 0) {
-    shiftRowsDown(ws, SUMMARY_START_ROW, extraRows, 9); // maxCol = J (index 9)
+    doc.text(dateFormatted, COL_DATE, y, { width: 110 });
+    doc.text(description, COL_DESC, y, { width: 260 });
+    doc.text(formatEuro(amount), COL_AMOUNT, y, { width: 95, align: "right" });
+    y += 18;
   }
+
+  // Spacing before totals
+  y = Math.max(y, 500);
+  drawLine(doc, y, LEFT, RIGHT);
+  y += 8;
+
+  // Subtotalen
+  doc.font("Helvetica-Bold").fontSize(9);
+  doc.text("Subtotalen", COL_DESC, y, { width: 260 });
+  doc.text(formatEuro(totalAmount), COL_AMOUNT, y, { width: 95, align: "right" });
+  y += 18;
+
+  // Af: evt. voorschot
+  doc.font("Helvetica").fontSize(9);
+  doc.text("Af: evt. voorschot", COL_DESC, y, { width: 260 });
+  doc.text(formatEuro(0), COL_AMOUNT, y, { width: 95, align: "right" });
+  y += 18;
+
+  // TOTAAL
+  doc.font("Helvetica-Bold").fontSize(9);
+  doc.text("TOTAAL", COL_DESC, y, { width: 260 });
+  doc.text(formatEuro(totalAmount), COL_AMOUNT, y, { width: 95, align: "right" });
+  y += 8;
+  drawLine(doc, y, LEFT, RIGHT);
+  y += 25;
+
+  // Handtekening
+  doc.font("Helvetica").fontSize(9);
+  doc.text("handtekening werknemer:", LEFT, y);
+  y += 60;
+
+  // Toelichting
+  drawLine(doc, y, LEFT, RIGHT);
+  y += 8;
+  doc.font("Helvetica-Bold").fontSize(8);
+  doc.text("Toelichting", LEFT, y);
+  y += 14;
+  doc.font("Helvetica").fontSize(7);
+  doc.text(
+    "Interne declaratie voor vergoeding van reiskosten gemaakt in opdracht en tijdens werktijd en overige declaraties. Declaraties kunnen worden ingeleverd bij de directie",
+    LEFT, y, { width: RIGHT - LEFT }
+  );
+  y += 12;
+  doc.text(
+    "De vergoedingen worden op basis van de declaraties met het salaris uitbetaald.",
+    LEFT, y, { width: RIGHT - LEFT }
+  );
+
+  doc.end();
+  return bufferPromise;
+}
+
+// =============================================================
+// Helper: Generate DE UNIE travel PDF matching their template
+// =============================================================
+async function generateTravelPdf(expenses, month, year, monthName, employeeName = EMPLOYEE_NAME, bankAccount = BANK_ACCOUNT) {
+  const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 40 });
+  const bufferPromise = pdfToBuffer(doc);
+
+  const LEFT = 40;
+  const RIGHT = 802;
+
+  // Column positions for landscape A4
+  const cols = {
+    datum: LEFT,
+    projnr: 115,
+    projnaam: 195,
+    omschr: 310,
+    ov: 440,
+    km: 510,
+    kmverg: 560,
+    overig: 650,
+    totaal: 720,
+  };
+  const colWidths = {
+    datum: 70,
+    projnr: 75,
+    projnaam: 110,
+    omschr: 125,
+    ov: 65,
+    km: 45,
+    kmverg: 85,
+    overig: 65,
+    totaal: 80,
+  };
 
   const now = new Date();
   const todayStr = `${now.getDate()} ${DUTCH_MONTHS[now.getMonth()].toLowerCase()} ${now.getFullYear()}`;
 
-  // Fill header info
-  ws["A3"] = { t: "s", v: `medewerker: ${employeeName}` };
-  ws["A4"] = { t: "s", v: `bank/giro nummer: Privé rekening- ${bankAccount}` };
-  ws["A5"] = { t: "s", v: `datum: ${todayStr}` };
+  // Title
+  doc.fontSize(14).font("Helvetica-Bold")
+    .text(`${COMPANY_NAME} declaratieformulier`, LEFT, 40);
 
-  // Fill data rows
-  for (let i = 0; i < sorted.length; i++) {
-    const r = sorted[i];
-    const row = DATA_START_ROW + i; // 0-indexed
+  // Employee info
+  let y = 72;
+  doc.fontSize(9).font("Helvetica");
+  doc.text("medewerker:", LEFT, y, { continued: false });
+  doc.text(employeeName, 130, y);
+  y += 14;
+  doc.text("bank/giro nummer:", LEFT, y);
+  doc.text(bankAccount, 130, y);
+  y += 14;
+  doc.text("datum:", LEFT, y);
+  doc.text(todayStr, 130, y);
+  y += 22;
 
-    const dateFormatted = formatDateDutch(r.receipt_date);
-    const description = [r.store_name, r.description].filter(Boolean).join(" - ");
+  // Column headers
+  drawLine(doc, y, LEFT, RIGHT);
+  y += 5;
+  doc.fontSize(7.5).font("Helvetica-Bold");
+  doc.text("datum", cols.datum, y, { width: colWidths.datum });
+  doc.text("projectnr.", cols.projnr, y, { width: colWidths.projnr });
+  doc.text("projectnaam", cols.projnaam, y, { width: colWidths.projnaam });
+  doc.text("omschrijving", cols.omschr, y, { width: colWidths.omschr });
+  doc.text("reiskosten", cols.ov, y, { width: colWidths.ov, align: "right" });
+  doc.text("", cols.km, y, { width: colWidths.km, align: "right" });
+  doc.text("km vergoeding", cols.kmverg, y, { width: colWidths.kmverg, align: "right" });
+  doc.text("overige", cols.overig, y, { width: colWidths.overig, align: "right" });
+  doc.text("totale", cols.totaal, y, { width: colWidths.totaal, align: "right" });
+  y += 11;
+  doc.text("", cols.datum, y);
+  doc.text("", cols.projnr, y);
+  doc.text("", cols.projnaam, y);
+  doc.text("", cols.omschr, y);
+  doc.text("OV", cols.ov, y, { width: colWidths.ov, align: "right" });
+  doc.text("km's", cols.km, y, { width: colWidths.km, align: "right" });
+  doc.text(`belastingvrij`, cols.kmverg, y, { width: colWidths.kmverg, align: "right" });
+  doc.text("onkosten", cols.overig, y, { width: colWidths.overig, align: "right" });
+  doc.text("vergoeding", cols.totaal, y, { width: colWidths.totaal, align: "right" });
+  y += 11;
+  doc.font("Helvetica").fontSize(6.5);
+  doc.text("", cols.ov, y, { width: colWidths.ov, align: "right" });
+  doc.text("", cols.km, y, { width: colWidths.km, align: "right" });
+  doc.text(`x \u20AC ${KM_RATE.toFixed(2)}`, cols.kmverg, y, { width: colWidths.kmverg, align: "right" });
+  y += 12;
+  drawLine(doc, y, LEFT, RIGHT);
+  y += 6;
 
-    ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { t: "s", v: dateFormatted };
-    ws[XLSX.utils.encode_cell({ r: row, c: 1 })] = { t: "s", v: description };
-    ws[XLSX.utils.encode_cell({ r: row, c: 2 })] = { t: "n", v: r.amount || 0 };
-  }
-
-  // Update summary formulas (they may have shifted)
-  const summaryRow = SUMMARY_START_ROW + extraRows; // 0-indexed
-  const lastDataRow = DATA_START_ROW + Math.max(sorted.length, TEMPLATE_DATA_SLOTS); // end of data range
-  const sumRange = `C10:C${lastDataRow}`; // 1-indexed in formula
-
-  const sAddr = XLSX.utils.encode_cell({ r: summaryRow, c: 2 }); // C column
-  ws[sAddr] = { t: "n", v: 0, f: `SUM(${sumRange})` };
-
-  // "Af: evt. voorschot" row
-  const advAddr = XLSX.utils.encode_cell({ r: summaryRow + 1, c: 2 });
-  ws[advAddr] = { t: "n", v: 0 };
-
-  // TOTAAL row
-  const totRow = summaryRow + 2;
-  const subtotalCell = XLSX.utils.encode_cell({ r: summaryRow, c: 2 });
-  const advanceCell = XLSX.utils.encode_cell({ r: summaryRow + 1, c: 2 });
-  const totAddr = XLSX.utils.encode_cell({ r: totRow, c: 2 });
-  // Formula references using cell names (1-indexed)
-  const subtotalRef = `C${summaryRow + 1}`;
-  const advanceRef = `C${summaryRow + 2}`;
-  ws[totAddr] = { t: "n", v: 0, f: `${subtotalRef}-${advanceRef}` };
-
-  // Update sheet range to cover all data
-  const ref = XLSX.utils.decode_range(ws["!ref"]);
-  ref.e.r = Math.max(ref.e.r, totRow + 20); // ensure footer rows are included
-  ws["!ref"] = XLSX.utils.encode_range(ref);
-
-  return XLSX.write(wb, { bookType: "xlsx", type: "buffer" });
-}
-
-// =============================================================
-// Helper: Generate DE UNIE travel Excel using official template
-// =============================================================
-function generateTravelExcel(expenses, month, year, monthName, employeeName = EMPLOYEE_NAME) {
-  const templatePath = path.join(__dirname, "templates", "reiskosten-template.xlsx");
-  const wb = XLSX.readFile(templatePath);
-  const ws = wb.Sheets["Blad1"];
-
+  // Sort by date
   const sorted = [...expenses].sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
   );
 
-  // Template layout (0-indexed):
-  // Row 1 (idx 0): DE UNIE declaratieformulier (merged A1:I1)
-  // Row 3 (idx 2): medewerker: | [B3 = name]
-  // Row 4 (idx 3): bank/giro nummer: | [B4 = bank]
-  // Row 5 (idx 4): datum: | [B5 = date]
-  // Rows 7-9 (idx 6-8): column headers
-  // Rows 11-14 (idx 10-13): data rows (4 template slots)
-  // Row 16 (idx 15): Subtotalen with SUM formulas
-  // Row 17 (idx 16): Af: evt. voorschot
-  // Row 18 (idx 17): TOTAAL
-  // Row 20 (idx 19): handtekening
-  // Row 26+ (idx 25+): Toelichting
+  // Compute totals
+  let totalOv = 0, totalKm = 0, totalKmVerg = 0, totalOverig = 0, totalVerg = 0;
 
-  const DATA_START_ROW = 10;   // 0-indexed row 10 = Excel row 11
-  const TEMPLATE_DATA_SLOTS = 4;   // rows 11-14
-  const SUMMARY_START_ROW = 15; // 0-indexed row 15 = Excel row 16
-
-  // Calculate extra rows needed
-  const extraRows = Math.max(0, sorted.length - TEMPLATE_DATA_SLOTS);
-
-  // If we need more rows, shift the summary/footer section down
-  if (extraRows > 0) {
-    shiftRowsDown(ws, SUMMARY_START_ROW, extraRows, 15); // maxCol = P (index 15)
-  }
-
-  const now = new Date();
-  const todayStr = `${now.getDate()} ${DUTCH_MONTHS[now.getMonth()].toLowerCase()} ${now.getFullYear()}`;
-
-  // Fill header info
-  ws["B3"] = { t: "s", v: employeeName };
-  ws["B4"] = { t: "s", v: BANK_ACCOUNT };
-  ws["B5"] = { t: "s", v: todayStr };
-
-  // Fill data rows
-  for (let i = 0; i < sorted.length; i++) {
-    const e = sorted[i];
-    const row = DATA_START_ROW + i; // 0-indexed
-
+  // Data rows
+  doc.font("Helvetica").fontSize(8);
+  for (const e of sorted) {
+    if (y > 480) {
+      doc.addPage();
+      y = 40;
+    }
     const dateFormatted = formatDateDutch(e.date);
+    const kmVerg = (e.kilometers || 0) * KM_RATE;
+    const total = (e.travel_cost || 0) + kmVerg;
 
-    // A = datum
-    ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { t: "s", v: dateFormatted };
-    // B = projectnr.
-    if (e.project_code) ws[XLSX.utils.encode_cell({ r: row, c: 1 })] = { t: "s", v: e.project_code };
-    // C = projectnaam
-    if (e.project_name) ws[XLSX.utils.encode_cell({ r: row, c: 2 })] = { t: "s", v: e.project_name };
-    // D = omschrijving (kan leeg zijn)
-    if (e.description) ws[XLSX.utils.encode_cell({ r: row, c: 3 })] = { t: "s", v: e.description };
-    // E = reiskosten OV
-    if (e.travel_cost) ws[XLSX.utils.encode_cell({ r: row, c: 4 })] = { t: "n", v: e.travel_cost };
-    // F = km's
-    if (e.kilometers) ws[XLSX.utils.encode_cell({ r: row, c: 5 })] = { t: "n", v: e.kilometers };
-    // G = km vergoeding (formula: F*0.23)
-    const excelRow = row + 1; // 1-indexed for formulas
-    ws[XLSX.utils.encode_cell({ r: row, c: 6 })] = { t: "n", v: (e.kilometers || 0) * KM_RATE, f: `F${excelRow}*0.23` };
-    // H = overige onkosten (leeg)
-    // I = totale vergoeding (formula: SUM(E,G,H))
-    ws[XLSX.utils.encode_cell({ r: row, c: 8 })] = {
-      t: "n",
-      v: (e.travel_cost || 0) + ((e.kilometers || 0) * KM_RATE),
-      f: `SUM(E${excelRow},G${excelRow},H${excelRow})`,
-    };
+    totalOv += e.travel_cost || 0;
+    totalKm += e.kilometers || 0;
+    totalKmVerg += kmVerg;
+    totalVerg += total;
+
+    doc.text(dateFormatted, cols.datum, y, { width: colWidths.datum });
+    doc.text(e.project_code || "", cols.projnr, y, { width: colWidths.projnr });
+    doc.text(e.project_name || "", cols.projnaam, y, { width: colWidths.projnaam });
+    doc.text(e.description || "", cols.omschr, y, { width: colWidths.omschr });
+    if (e.travel_cost) doc.text(formatEuro(e.travel_cost), cols.ov, y, { width: colWidths.ov, align: "right" });
+    if (e.kilometers) doc.text(String(e.kilometers), cols.km, y, { width: colWidths.km, align: "right" });
+    if (kmVerg) doc.text(formatEuro(kmVerg), cols.kmverg, y, { width: colWidths.kmverg, align: "right" });
+    doc.text(formatEuro(total), cols.totaal, y, { width: colWidths.totaal, align: "right" });
+    y += 16;
   }
 
-  // Update summary formulas (shifted by extraRows)
-  const summaryRow = SUMMARY_START_ROW + extraRows; // 0-indexed
-  const lastDataExcelRow = DATA_START_ROW + Math.max(sorted.length, TEMPLATE_DATA_SLOTS); // 0-indexed end
-  const lastDataRef = lastDataExcelRow; // for formula range (1-indexed = lastDataExcelRow + 1, but we use the max slot)
-  const dataEndRef = DATA_START_ROW + Math.max(sorted.length - 1, TEMPLATE_DATA_SLOTS - 1) + 1; // 1-indexed last data row
+  // Spacing before totals
+  y += 8;
+  drawLine(doc, y, LEFT, RIGHT);
+  y += 6;
 
-  // Subtotalen row formulas
-  const sumRowRef = summaryRow + 1; // 1-indexed
-  // E = SUM of OV costs
-  ws[XLSX.utils.encode_cell({ r: summaryRow, c: 4 })] = { t: "n", v: 0, f: `SUM(E11:E${dataEndRef})` };
-  // F = SUM of km's
-  ws[XLSX.utils.encode_cell({ r: summaryRow, c: 5 })] = { t: "n", v: 0, f: `SUM(F11:F${dataEndRef})` };
-  // G = SUM of km vergoeding
-  ws[XLSX.utils.encode_cell({ r: summaryRow, c: 6 })] = { t: "n", v: 0, f: `SUM(G11:G${dataEndRef})` };
-  // H = SUM of overige onkosten
-  ws[XLSX.utils.encode_cell({ r: summaryRow, c: 7 })] = { t: "n", v: 0, f: `SUM(H11:H${dataEndRef})` };
-  // I = SUM of totale vergoeding
-  ws[XLSX.utils.encode_cell({ r: summaryRow, c: 8 })] = { t: "n", v: 0, f: `SUM(I11:I${dataEndRef})` };
+  // Subtotalen
+  doc.font("Helvetica-Bold").fontSize(8);
+  doc.text("Subtotalen", cols.omschr, y, { width: colWidths.omschr });
+  if (totalOv) doc.text(formatEuro(totalOv), cols.ov, y, { width: colWidths.ov, align: "right" });
+  doc.text(String(totalKm), cols.km, y, { width: colWidths.km, align: "right" });
+  doc.text(formatEuro(totalKmVerg), cols.kmverg, y, { width: colWidths.kmverg, align: "right" });
+  if (totalOverig) doc.text(formatEuro(totalOverig), cols.overig, y, { width: colWidths.overig, align: "right" });
+  doc.text(formatEuro(totalVerg), cols.totaal, y, { width: colWidths.totaal, align: "right" });
+  y += 16;
 
-  // "Af: evt. voorschot" row
-  const advRow = summaryRow + 1;
-  ws[XLSX.utils.encode_cell({ r: advRow, c: 8 })] = { t: "n", v: 0 };
+  // Af: evt. voorschot
+  doc.font("Helvetica").fontSize(8);
+  doc.text("Af: evt. voorschot", cols.omschr, y, { width: colWidths.omschr });
+  doc.text(formatEuro(0), cols.totaal, y, { width: colWidths.totaal, align: "right" });
+  y += 16;
 
-  // TOTAAL row
-  const totRow = summaryRow + 2;
-  ws[XLSX.utils.encode_cell({ r: totRow, c: 8 })] = {
-    t: "n", v: 0,
-    f: `I${summaryRow + 1}-I${advRow + 1}`,
-  };
+  // TOTAAL
+  doc.font("Helvetica-Bold").fontSize(8);
+  doc.text("TOTAAL", cols.omschr, y, { width: colWidths.omschr });
+  doc.text(formatEuro(totalVerg), cols.totaal, y, { width: colWidths.totaal, align: "right" });
+  y += 6;
+  drawLine(doc, y, LEFT, RIGHT);
+  y += 25;
 
-  // Update sheet range
-  const ref = XLSX.utils.decode_range(ws["!ref"]);
-  ref.e.r = Math.max(ref.e.r, totRow + 20);
-  ws["!ref"] = XLSX.utils.encode_range(ref);
+  // Handtekening
+  doc.font("Helvetica").fontSize(8);
+  doc.text("handtekening werknemer:", LEFT, y);
+  doc.text("handtekening werkgever:", 420, y);
+  y += 60;
 
-  return XLSX.write(wb, { bookType: "xlsx", type: "buffer" });
+  // Toelichting
+  drawLine(doc, y, LEFT, RIGHT);
+  y += 6;
+  doc.font("Helvetica-Bold").fontSize(7);
+  doc.text("Toelichting", LEFT, y);
+  y += 12;
+  doc.font("Helvetica").fontSize(6.5);
+  doc.text(
+    "Interne declaratie voor vergoeding van reiskosten gemaakt in opdracht en tijdens werktijd en overige declaraties. Declaraties kunnen worden ingeleverd bij de directie",
+    LEFT, y, { width: RIGHT - LEFT }
+  );
+  y += 10;
+  doc.text(
+    "De vergoedingen worden op basis van de declaraties met het salaris uitbetaald.",
+    LEFT, y, { width: RIGHT - LEFT }
+  );
+
+  doc.end();
+  return bufferPromise;
 }

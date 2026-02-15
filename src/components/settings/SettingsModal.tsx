@@ -1,14 +1,17 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Save, Loader2 } from 'lucide-react'
+import { X, Save, Loader2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useSettings } from '@/hooks/useSettings'
-import { APP_NAME } from '@/lib/constants'
 
-export function OnboardingPage() {
+interface SettingsModalProps {
+  isOpen: boolean
+  onClose: () => void
+  onSave: () => void
+}
+
+export function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
   const { user } = useAuth()
   const { saveSettings } = useSettings()
-  const navigate = useNavigate()
 
   const [employeeName, setEmployeeName] = useState('')
   const [bankAccount, setBankAccount] = useState('')
@@ -50,7 +53,7 @@ export function OnboardingPage() {
         recipientEmail: recipientEmail.trim(),
         avatarUrl: '',
       })
-      navigate('/', { replace: true })
+      onSave()
     } catch (err) {
       console.error('Error saving settings:', err)
       setError('Kon instellingen niet opslaan. Probeer het opnieuw.')
@@ -59,28 +62,26 @@ export function OnboardingPage() {
     }
   }
 
-  if (!user) {
-    return null
-  }
+  if (!isOpen) return null
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-6">
-        {/* Logo + App name */}
-        <div className="text-center">
-          <img
-            src="/logo.png"
-            alt="Logo"
-            className="h-24 mx-auto drop-shadow-lg object-contain"
-          />
-          <h1 className="mt-3 text-xl font-bold text-gray-900">{APP_NAME}</h1>
-          <p className="text-gray-500 text-sm mt-1">Welkom! Vertel ons iets over jezelf</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <h2 className="text-lg font-bold text-gray-900">Vul je gegevens in</h2>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-lg hover:bg-gray-100 transition-colors"
+          >
+            <X size={20} className="text-gray-500" />
+          </button>
         </div>
 
-        {/* Onboarding form */}
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 space-y-5">
-          <p className="text-sm text-gray-600 text-center">
-            Deze gegevens worden gebruikt voor je declaraties
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          <p className="text-sm text-gray-600">
+            Deze gegevens worden gebruikt voor je declaraties en kunnen later worden aangepast in de instellingen.
           </p>
 
           {/* Employee Name */}
@@ -98,6 +99,7 @@ export function OnboardingPage() {
               placeholder="Voornaam Achternaam"
               className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm"
               required
+              autoFocus
             />
           </div>
 
@@ -129,7 +131,7 @@ export function OnboardingPage() {
             </p>
             <input
               type="email"
-              value={user.email || ''}
+              value={user?.email || ''}
               disabled
               className="w-full px-3 py-2.5 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
             />
@@ -159,24 +161,33 @@ export function OnboardingPage() {
             </div>
           )}
 
-          {/* Submit button */}
-          <button
-            type="submit"
-            disabled={saving}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors"
-          >
-            {saving ? (
-              <>
-                <Loader2 size={18} className="animate-spin" />
-                Opslaan...
-              </>
-            ) : (
-              <>
-                <Save size={18} />
-                Gegevens opslaan
-              </>
-            )}
-          </button>
+          {/* Actions */}
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+            >
+              Annuleren
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors"
+            >
+              {saving ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  Opslaan...
+                </>
+              ) : (
+                <>
+                  <Save size={18} />
+                  Opslaan
+                </>
+              )}
+            </button>
+          </div>
         </form>
       </div>
     </div>

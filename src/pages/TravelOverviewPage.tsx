@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, MapPin, Trash2, Send, Loader2, CheckCircle } from 'lucide-react'
+import { Plus, MapPin, Send, Loader2, CheckCircle } from 'lucide-react'
 import { useTravel } from '@/hooks/useTravel'
 import { useToast } from '@/components/ui/Toast'
 import { TravelCard } from '@/components/travel/TravelCard'
@@ -10,16 +10,17 @@ import { DUTCH_MONTHS, type TravelExpense } from '@/types/receipt'
 import { SUBMIT_TRAVEL_URL } from '@/lib/constants'
 import { getAuthToken } from '@/lib/firebase'
 import { useSettings } from '@/hooks/useSettings'
+import { SettingsModal } from '@/components/settings/SettingsModal'
 
 export function TravelOverviewPage() {
-  const { expenses, fetchExpenses, deleteExpense, getSubmittedExpensesByMonth, loading } = useTravel()
-  const { settings } = useSettings()
+  const { expenses, fetchExpenses, getSubmittedExpensesByMonth, loading } = useTravel()
+  const { settings, loadSettings } = useSettings()
   const { showToast } = useToast()
   const [month, setMonth] = useState(currentMonthYear().month)
   const [year, setYear] = useState(currentMonthYear().year)
-  const [deleting, setDeleting] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [submittedExpenses, setSubmittedExpenses] = useState<TravelExpense[]>([])
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
 
   useEffect(() => {
     fetchExpenses(month, year)
@@ -31,20 +32,15 @@ export function TravelOverviewPage() {
     setYear(newYear)
   }
 
-  const handleDelete = useCallback(async (id: string) => {
-    if (!confirm('Weet je zeker dat je deze declaratie wilt verwijderen?')) return
-    setDeleting(id)
-    try {
-      await deleteExpense(id)
-      showToast('success', 'Declaratie verwijderd')
-    } catch {
-      showToast('error', 'Kon declaratie niet verwijderen')
-    } finally {
-      setDeleting(null)
-    }
-  }, [deleteExpense, showToast])
-
   const handleSubmit = async () => {
+    // Check if settings are complete
+    const hasSettings = settings.employeeName?.trim() && settings.bankAccount?.trim() && settings.recipientEmail?.trim()
+
+    if (!hasSettings) {
+      setShowSettingsModal(true)
+      return
+    }
+
     setSubmitting(true)
     try {
       const token = await getAuthToken()
@@ -54,7 +50,7 @@ export function TravelOverviewPage() {
           'Content-Type': 'application/json',
           ...(token && { Authorization: `Bearer ${token}` }),
         },
-        body: JSON.stringify({ month, year, recipientEmail: settings.recipientEmail, employeeName: settings.employeeName }),
+        body: JSON.stringify({ month, year, recipientEmail: settings.recipientEmail, employeeName: settings.employeeName, bankAccount: settings.bankAccount }),
       })
 
       const result = await response.json()
@@ -73,6 +69,13 @@ export function TravelOverviewPage() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handleSettingsSaved = async () => {
+    setShowSettingsModal(false)
+    // Reload settings and try submit again
+    await loadSettings()
+    handleSubmit()
   }
 
   // Only show non-submitted in the main list
@@ -126,17 +129,7 @@ export function TravelOverviewPage() {
           {/* Pending list */}
           <div className="space-y-2">
             {pendingExpenses.map((expense) => (
-              <div key={expense.id} className="relative group">
-                <TravelCard expense={expense} />
-                <button
-                  onClick={() => handleDelete(expense.id)}
-                  disabled={deleting === expense.id}
-                  className="absolute top-3 right-3 p-1.5 rounded-full bg-red-50 text-red-400 opacity-0 group-hover:opacity-100 hover:bg-red-100 hover:text-red-600 transition-all"
-                  title="Verwijderen"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
+              <TravelCard key={expense.id} expense={expense} />
             ))}
           </div>
 
@@ -204,6 +197,12 @@ export function TravelOverviewPage() {
           </details>
         </div>
       )}
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        onSave={handleSettingsSaved}
+      />
     </div>
   )
 }

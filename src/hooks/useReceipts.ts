@@ -38,6 +38,7 @@ function docToReceipt(docSnap: { id: string; data: () => Record<string, unknown>
     vat_amount: (d.vat_amount as number) || null,
     receipt_date: (d.receipt_date as string) || '',
     category: (d.category as string) || 'Overig',
+    file_type: (d.file_type as 'image' | 'pdf') || 'image',
     ocr_raw_text: (d.ocr_raw_text as string) || null,
     notes: (d.notes as string) || '',
     is_submitted: (d.is_submitted as boolean) || false,
@@ -99,11 +100,14 @@ export function useReceipts() {
   ): Promise<Receipt | null> => {
     try {
       const tempId = crypto.randomUUID()
-      const photoPath = generatePhotoPath(tempId)
+      const isPdf = photoBlob.type === 'application/pdf'
+      const extension = isPdf ? 'pdf' : 'jpg'
+      const contentType = isPdf ? 'application/pdf' : 'image/jpeg'
+      const photoPath = generatePhotoPath(tempId, extension)
 
-      // Upload photo to Firebase Storage
+      // Upload file to Firebase Storage
       const storageRef = ref(storage, `receipt-photos/${photoPath}`)
-      await uploadBytes(storageRef, photoBlob, { contentType: 'image/jpeg' })
+      await uploadBytes(storageRef, photoBlob, { contentType })
 
       // Get download URL
       const photoUrl = await getDownloadURL(storageRef)
@@ -117,6 +121,7 @@ export function useReceipts() {
         userId,
         photo_path: photoPath,
         photo_url: photoUrl,
+        file_type: isPdf ? 'pdf' as const : 'image' as const,
         store_name: formData.store_name,
         description: formData.description,
         amount: parseFloat(formData.amount) || 0,

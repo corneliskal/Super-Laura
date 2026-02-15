@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Trash2, CheckCircle, Edit3, ZoomIn } from 'lucide-react'
+import { ArrowLeft, Trash2, CheckCircle, Edit3, ZoomIn, FileText, ExternalLink } from 'lucide-react'
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { formatDateDutch, formatEuro } from '@/lib/dateUtils'
@@ -40,6 +40,7 @@ export function ReceiptDetailPage() {
           vat_amount: d.vat_amount || null,
           receipt_date: d.receipt_date || '',
           category: d.category || 'Overig',
+          file_type: d.file_type || 'image',
           ocr_raw_text: d.ocr_raw_text || null,
           notes: d.notes || '',
           is_submitted: d.is_submitted || false,
@@ -116,21 +117,39 @@ export function ReceiptDetailPage() {
         </div>
       </div>
 
-      {/* Photo */}
+      {/* Photo or PDF */}
       {receipt.photo_url && (
         <div className="relative">
-          <img
-            src={receipt.photo_url}
-            alt="Bonnetje foto"
-            onClick={() => setImageZoomed(!imageZoomed)}
-            className={`w-full rounded-2xl shadow-md cursor-pointer transition-all ${
-              imageZoomed ? 'max-h-none' : 'max-h-72 object-contain'
-            } bg-gray-100`}
-          />
-          {!imageZoomed && (
-            <div className="absolute bottom-3 right-3 bg-black/50 backdrop-blur-sm rounded-full p-1.5">
-              <ZoomIn size={16} className="text-white" />
-            </div>
+          {receipt.file_type === 'pdf' ? (
+            <a
+              href={receipt.photo_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full rounded-2xl shadow-md bg-gray-100 flex flex-col items-center justify-center py-10 gap-3 hover:bg-gray-200 transition-colors block"
+            >
+              <FileText size={48} className="text-red-500" />
+              <p className="text-sm font-medium text-gray-700">PDF bonnetje</p>
+              <span className="inline-flex items-center gap-1.5 text-xs text-primary-600 font-medium">
+                <ExternalLink size={14} />
+                Openen in nieuw tabblad
+              </span>
+            </a>
+          ) : (
+            <>
+              <img
+                src={receipt.photo_url}
+                alt="Bonnetje foto"
+                onClick={() => setImageZoomed(!imageZoomed)}
+                className={`w-full rounded-2xl shadow-md cursor-pointer transition-all ${
+                  imageZoomed ? 'max-h-none' : 'max-h-72 object-contain'
+                } bg-gray-100`}
+              />
+              {!imageZoomed && (
+                <div className="absolute bottom-3 right-3 bg-black/50 backdrop-blur-sm rounded-full p-1.5">
+                  <ZoomIn size={16} className="text-white" />
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

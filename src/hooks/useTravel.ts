@@ -2,8 +2,10 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   addDoc,
+  updateDoc,
   deleteDoc,
   query,
   where,
@@ -119,6 +121,46 @@ export function useTravel() {
     }
   }, [])
 
+  const getExpense = useCallback(async (id: string): Promise<TravelExpense | null> => {
+    try {
+      const docSnap = await getDoc(doc(db, TRAVEL_COLLECTION, id))
+      if (!docSnap.exists()) return null
+      return docToTravelExpense(docSnap as { id: string; data: () => Record<string, unknown> })
+    } catch (err) {
+      console.error('Error getting travel expense:', err)
+      throw err
+    }
+  }, [])
+
+  const updateExpense = useCallback(async (id: string, formData: TravelExpenseFormData): Promise<void> => {
+    try {
+      const kilometers = parseFloat(formData.kilometers) || 0
+      const travelCost = parseFloat(formData.travel_cost) || 0
+      const kmReimbursement = Math.round(kilometers * KM_RATE * 100) / 100
+      const totalReimbursement = Math.round((travelCost + kmReimbursement) * 100) / 100
+
+      const updateData = {
+        date: formData.date,
+        project_code: formData.project_code,
+        project_name: formData.project_name,
+        description: formData.description,
+        travel_cost: travelCost,
+        kilometers,
+        km_reimbursement: kmReimbursement,
+        total_reimbursement: totalReimbursement,
+        updated_at: new Date().toISOString(),
+      }
+
+      await updateDoc(doc(db, TRAVEL_COLLECTION, id), updateData)
+      setExpenses((prev) =>
+        prev.map((e) => (e.id === id ? { ...e, ...updateData } : e))
+      )
+    } catch (err) {
+      console.error('Error updating travel expense:', err)
+      throw err
+    }
+  }, [])
+
   const deleteExpense = useCallback(async (id: string) => {
     try {
       await deleteDoc(doc(db, TRAVEL_COLLECTION, id))
@@ -230,7 +272,9 @@ export function useTravel() {
     loading,
     error,
     fetchExpenses,
+    getExpense,
     createExpense,
+    updateExpense,
     deleteExpense,
     getExpensesByMonth,
     getSubmittedExpensesByMonth,

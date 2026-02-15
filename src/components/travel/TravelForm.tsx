@@ -6,10 +6,12 @@ import { KM_RATE, type TravelExpenseFormData } from '@/types/receipt'
 interface TravelFormProps {
   onSubmit: (data: TravelExpenseFormData) => Promise<void>
   saving: boolean
+  initialData?: TravelExpenseFormData
+  submitLabel?: string
 }
 
-export function TravelForm({ onSubmit, saving }: TravelFormProps) {
-  const [formData, setFormData] = useState<TravelExpenseFormData>({
+export function TravelForm({ onSubmit, saving, initialData, submitLabel }: TravelFormProps) {
+  const [formData, setFormData] = useState<TravelExpenseFormData>(initialData ?? {
     date: todayISO(),
     project_code: '',
     project_name: '',
@@ -153,7 +155,7 @@ export function TravelForm({ onSubmit, saving }: TravelFormProps) {
         ) : (
           <>
             <Save size={20} />
-            Reisdeclaratie opslaan
+            {submitLabel || 'Reisdeclaratie opslaan'}
           </>
         )}
       </button>

@@ -34,5 +34,11 @@ service cloud.firestore {
     match /users/{userId}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+
+    // Email verifications (users can read their own status)
+    match /email_verifications/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false; // Only Cloud Functions can write
+    }
   }
 }

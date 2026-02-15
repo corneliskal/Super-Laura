@@ -156,7 +156,7 @@ export function SubmitMonthPage() {
               {/* Submit button */}
               <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
                 <p className="text-sm text-gray-600">
-                  Er wordt een e-mail gestuurd met een Excel overzicht en alle bonnetje foto's als bijlagen.
+                  Er wordt een e-mail gestuurd met een PDF overzicht en alle bonnetje foto's als bijlagen.
                 </p>
                 <button
                   onClick={handleSubmit}

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { Receipt, Car } from 'lucide-react'
+import { useAuth } from '@/contexts/AuthContext'
 // GEDEACTIVEERD: Superheld Avatar feature (geparkeerd)
 // import { useSettings } from '@/hooks/useSettings'
 
@@ -23,6 +24,8 @@ const tiles = [
 ]
 
 export function HomePage() {
+  const { user } = useAuth()
+
   return (
     <div className="p-4 space-y-6">
       {/* Logo */}
@@ -30,7 +33,7 @@ export function HomePage() {
         <img
           src="/logo.png"
           alt="Super-Laura"
-          className="w-32 h-32 mx-auto drop-shadow-lg"
+          className="h-32 mx-auto drop-shadow-lg object-contain"
         />
       </div>
 
@@ -61,6 +64,13 @@ export function HomePage() {
           </Link>
         ))}
       </div>
+
+      {/* Subtle email display */}
+      {user?.email && (
+        <p className="text-center text-xs text-gray-400 pt-2">
+          {user.email}
+        </p>
+      )}
     </div>
   )
 }

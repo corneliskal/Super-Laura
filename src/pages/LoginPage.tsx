@@ -50,7 +50,7 @@ export function LoginPage() {
           <img
             src="/logo.png"
             alt="Super-Laura"
-            className="w-24 h-24 mx-auto drop-shadow-lg"
+            className="h-24 mx-auto drop-shadow-lg object-contain"
           />
           <h1 className="mt-3 text-xl font-bold text-gray-900">{APP_NAME}</h1>
           <p className="text-gray-500 text-sm mt-1">Log in om verder te gaan</p>
@@ -88,6 +88,14 @@ export function LoginPage() {
               autoComplete="current-password"
               className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
             />
+            <div className="mt-2 text-right">
+              <Link
+                to="/wachtwoord-vergeten"
+                className="text-xs text-primary-600 hover:text-primary-700 font-medium"
+              >
+                Wachtwoord vergeten?
+              </Link>
+            </div>
           </div>
 
           {error && (

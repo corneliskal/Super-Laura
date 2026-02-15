@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { Search, SlidersHorizontal, PlusCircle, Send, Loader2, CheckCircle } from 'lucide-react'
 import { useReceipts } from '@/hooks/useReceipts'
 import { useToast } from '@/components/ui/Toast'
@@ -10,18 +10,22 @@ import { CATEGORIES, DUTCH_MONTHS, type Receipt } from '@/types/receipt'
 import { SUBMIT_RECEIPTS_URL } from '@/lib/constants'
 import { getAuthToken } from '@/lib/firebase'
 import { useSettings } from '@/hooks/useSettings'
+import { SettingsModal } from '@/components/settings/SettingsModal'
 
 export function ReceiptsOverviewPage() {
-  const { receipts, fetchReceipts, getSubmittedReceiptsByMonth, loading } = useReceipts()
-  const { settings } = useSettings()
+  const location = useLocation()
+  const navState = location.state as { month?: number; year?: number } | null
+  const { receipts, fetchReceipts, getSubmittedReceiptsByMonth, loading, error } = useReceipts()
+  const { settings, loadSettings } = useSettings()
   const { showToast } = useToast()
-  const [month, setMonth] = useState(currentMonthYear().month)
-  const [year, setYear] = useState(currentMonthYear().year)
+  const [month, setMonth] = useState(navState?.month || currentMonthYear().month)
+  const [year, setYear] = useState(navState?.year || currentMonthYear().year)
   const [searchQuery, setSearchQuery] = useState('')
   const [filterCategory, setFilterCategory] = useState<string>('')
   const [showFilters, setShowFilters] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submittedReceipts, setSubmittedReceipts] = useState<Receipt[]>([])
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
 
   useEffect(() => {
     fetchReceipts(month, year)
@@ -34,6 +38,14 @@ export function ReceiptsOverviewPage() {
   }
 
   const handleSubmit = async () => {
+    // Check if settings are complete
+    const hasSettings = settings.employeeName?.trim() && settings.bankAccount?.trim() && settings.recipientEmail?.trim()
+
+    if (!hasSettings) {
+      setShowSettingsModal(true)
+      return
+    }
+
     setSubmitting(true)
     try {
       const token = await getAuthToken()
@@ -43,7 +55,7 @@ export function ReceiptsOverviewPage() {
           'Content-Type': 'application/json',
           ...(token && { Authorization: `Bearer ${token}` }),
         },
-        body: JSON.stringify({ month, year, recipientEmail: settings.recipientEmail, employeeName: settings.employeeName }),
+        body: JSON.stringify({ month, year, recipientEmail: settings.recipientEmail, employeeName: settings.employeeName, bankAccount: settings.bankAccount }),
       })
 
       const result = await response.json()
@@ -62,6 +74,13 @@ export function ReceiptsOverviewPage() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handleSettingsSaved = async () => {
+    setShowSettingsModal(false)
+    // Reload settings and try submit again
+    await loadSettings()
+    handleSubmit()
   }
 
   // Only show non-submitted in the main list
@@ -92,6 +111,7 @@ export function ReceiptsOverviewPage() {
         <h2 className="text-lg font-bold text-gray-900">Bonnetjes</h2>
         <Link
           to="/nieuw"
+          state={{ month, year }}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 transition-colors shadow-sm"
         >
           <PlusCircle size={16} />
@@ -154,6 +174,13 @@ export function ReceiptsOverviewPage() {
           </div>
         )}
       </div>
+
+      {/* Error message */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">
+          {error}
+        </div>
+      )}
 
       {/* Pending receipts */}
       {loading ? (
@@ -248,6 +275,13 @@ export function ReceiptsOverviewPage() {
           </details>
         </div>
       )}
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        onSave={handleSettingsSaved}
+      />
     </div>
   )
 }

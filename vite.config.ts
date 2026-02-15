@@ -10,10 +10,10 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['favicon.png', 'logo.png'],
       manifest: {
-        name: 'Super Laura Companion App',
-        short_name: 'Super Laura',
+        name: 'De Unie Companion App',
+        short_name: 'De Unie',
         description: 'Bonnetjes fotograferen, bewaren en indienen',
         theme_color: '#7c3aed',
         background_color: '#f5f3ff',

@@ -1,9 +1,10 @@
 import { useRef } from 'react'
-import { Camera, ImagePlus, RotateCcw, Loader2 } from 'lucide-react'
+import { Camera, ImagePlus, FileText, RotateCcw, Loader2 } from 'lucide-react'
 
 interface CameraCaptureProps {
   onImageCaptured: (file: File) => void
   previewUrl: string | null
+  isPdf?: boolean
   onRetake: () => void
   capturing: boolean
 }
@@ -11,17 +12,19 @@ interface CameraCaptureProps {
 export function CameraCapture({
   onImageCaptured,
   previewUrl,
+  isPdf,
   onRetake,
   capturing,
 }: CameraCaptureProps) {
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const galleryInputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    if (!file.type.startsWith('image/')) {
+    if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
       return
     }
 
@@ -33,11 +36,18 @@ export function CameraCapture({
   if (previewUrl) {
     return (
       <div className="relative">
-        <img
-          src={previewUrl}
-          alt="Bonnetje preview"
-          className="w-full rounded-2xl shadow-md max-h-80 object-contain bg-gray-100"
-        />
+        {isPdf ? (
+          <div className="w-full rounded-2xl shadow-md bg-gray-100 flex flex-col items-center justify-center py-12 gap-3">
+            <FileText size={48} className="text-red-500" />
+            <p className="text-sm font-medium text-gray-700">PDF bestand geüpload</p>
+          </div>
+        ) : (
+          <img
+            src={previewUrl}
+            alt="Bonnetje preview"
+            className="w-full rounded-2xl shadow-md max-h-80 object-contain bg-gray-100"
+          />
+        )}
         <button
           onClick={onRetake}
           className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm rounded-full p-2 shadow-md hover:bg-white transition-colors"
@@ -76,6 +86,13 @@ export function CameraCapture({
         onChange={handleFileChange}
         className="hidden"
       />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,application/pdf"
+        onChange={handleFileChange}
+        className="hidden"
+      />
 
       {/* Camera button */}
       <button
@@ -91,19 +108,34 @@ export function CameraCapture({
         </div>
       </button>
 
-      {/* Gallery button */}
-      <button
-        onClick={() => galleryInputRef.current?.click()}
-        className="w-full flex items-center justify-center gap-3 py-4 px-6 bg-white border-2 border-gray-200 rounded-2xl cursor-pointer hover:bg-gray-50 hover:border-primary-300 transition-colors"
-      >
-        <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
-          <ImagePlus size={20} className="text-primary-600" />
-        </div>
-        <div className="text-left">
-          <p className="text-gray-800 font-medium">Kies uit fotoalbum</p>
-          <p className="text-gray-400 text-xs">Upload een bestaande foto</p>
-        </div>
-      </button>
+      {/* Gallery / file buttons */}
+      <div className="flex gap-3">
+        <button
+          onClick={() => galleryInputRef.current?.click()}
+          className="flex-1 flex items-center justify-center gap-3 py-4 px-4 bg-white border-2 border-gray-200 rounded-2xl cursor-pointer hover:bg-gray-50 hover:border-primary-300 transition-colors"
+        >
+          <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
+            <ImagePlus size={20} className="text-primary-600" />
+          </div>
+          <div className="text-left">
+            <p className="text-gray-800 font-medium text-sm">Fotoalbum</p>
+            <p className="text-gray-400 text-xs">Upload foto</p>
+          </div>
+        </button>
+
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="flex-1 flex items-center justify-center gap-3 py-4 px-4 bg-white border-2 border-gray-200 rounded-2xl cursor-pointer hover:bg-gray-50 hover:border-red-300 transition-colors"
+        >
+          <div className="w-10 h-10 bg-red-50 rounded-full flex items-center justify-center">
+            <FileText size={20} className="text-red-500" />
+          </div>
+          <div className="text-left">
+            <p className="text-gray-800 font-medium text-sm">PDF bestand</p>
+            <p className="text-gray-400 text-xs">Upload PDF</p>
+          </div>
+        </button>
+      </div>
     </div>
   )
 }

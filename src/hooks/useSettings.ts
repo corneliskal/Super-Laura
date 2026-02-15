@@ -1,17 +1,17 @@
 import { useState, useEffect, useCallback } from 'react'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { db, auth } from '@/lib/firebase'
-import { RECIPIENT_EMAIL, EMPLOYEE_NAME } from '@/lib/constants'
-
 export interface UserSettings {
   recipientEmail: string
   employeeName: string
+  bankAccount: string
   avatarUrl: string
 }
 
 const DEFAULTS: UserSettings = {
-  recipientEmail: RECIPIENT_EMAIL,
-  employeeName: EMPLOYEE_NAME,
+  recipientEmail: '',
+  employeeName: '',
+  bankAccount: '',
   avatarUrl: '',
 }
 
@@ -39,6 +39,7 @@ export function useSettings() {
         setSettings({
           recipientEmail: (data.recipientEmail as string) || DEFAULTS.recipientEmail,
           employeeName: (data.employeeName as string) || DEFAULTS.employeeName,
+          bankAccount: (data.bankAccount as string) || DEFAULTS.bankAccount,
           avatarUrl: (data.avatarUrl as string) || DEFAULTS.avatarUrl,
         })
       }
@@ -60,6 +61,7 @@ export function useSettings() {
     await setDoc(ref, {
       recipientEmail: newSettings.recipientEmail,
       employeeName: newSettings.employeeName,
+      bankAccount: newSettings.bankAccount,
       avatarUrl: newSettings.avatarUrl || '',
     })
 

@@ -5,22 +5,35 @@ import { todayISO } from '@/lib/dateUtils'
 
 interface ReceiptFormProps {
   initialData?: ParsedReceipt | null
+  defaultMonth?: number
+  defaultYear?: number
   onSubmit: (data: ReceiptFormData) => Promise<void>
   saving: boolean
 }
 
-export function ReceiptForm({ initialData, onSubmit, saving }: ReceiptFormProps) {
+function getDefaultDate(month?: number, year?: number): string {
+  if (!month || !year) return todayISO()
+  const now = new Date()
+  const currentMonth = now.getMonth() + 1
+  const currentYear = now.getFullYear()
+  // If the target month is the current month, use today
+  if (month === currentMonth && year === currentYear) return todayISO()
+  // Otherwise use the 1st of the target month
+  return `${year}-${String(month).padStart(2, '0')}-01`
+}
+
+export function ReceiptForm({ initialData, defaultMonth, defaultYear, onSubmit, saving }: ReceiptFormProps) {
   const [formData, setFormData] = useState<ReceiptFormData>({
     store_name: '',
     description: '',
     amount: '',
     vat_amount: '',
-    receipt_date: todayISO(),
+    receipt_date: getDefaultDate(defaultMonth, defaultYear),
     category: 'Overig',
     notes: '',
   })
 
-  // Pre-fill from OCR results
+  // Pre-fill from OCR results (but NOT the date - that stays in the selected month)
   useEffect(() => {
     if (initialData) {
       setFormData((prev) => ({
@@ -28,7 +41,6 @@ export function ReceiptForm({ initialData, onSubmit, saving }: ReceiptFormProps)
         store_name: initialData.store_name || prev.store_name,
         amount: initialData.amount ? String(initialData.amount) : prev.amount,
         vat_amount: initialData.vat_amount ? String(initialData.vat_amount) : prev.vat_amount,
-        receipt_date: initialData.date || prev.receipt_date,
       }))
     }
   }, [initialData])

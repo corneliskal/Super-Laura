@@ -1,4 +1,4 @@
-import { ChevronRight, CheckCircle } from 'lucide-react'
+import { ChevronRight, CheckCircle, FileText } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { Receipt } from '@/types/receipt'
 import { CATEGORIES } from '@/types/receipt'
@@ -27,6 +27,9 @@ export function ReceiptCard({ receipt }: ReceiptCardProps) {
           <p className="font-semibold text-gray-900 truncate text-sm">
             {receipt.store_name || 'Onbekende winkel'}
           </p>
+          {receipt.file_type === 'pdf' && (
+            <FileText size={14} className="text-red-400 shrink-0" />
+          )}
           {receipt.is_submitted && (
             <CheckCircle size={14} className="text-green-500 shrink-0" />
           )}

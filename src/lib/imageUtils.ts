@@ -81,9 +81,9 @@ export function createPreviewUrl(file: File | Blob): string {
 /**
  * Generate a unique file path for storing a receipt photo.
  */
-export function generatePhotoPath(receiptId: string): string {
+export function generatePhotoPath(receiptId: string, extension: string = 'jpg'): string {
   const now = new Date()
   const year = now.getFullYear()
   const month = String(now.getMonth() + 1).padStart(2, '0')
-  return `${year}/${month}/${receiptId}.jpg`
+  return `${year}/${month}/${receiptId}.${extension}`
 }

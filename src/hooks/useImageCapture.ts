@@ -6,6 +6,7 @@ interface UseImageCaptureReturn {
   previewUrl: string | null
   capturing: boolean
   error: string | null
+  isPdf: boolean
   handleCapture: (file: File) => Promise<void>
   reset: () => void
   inputRef: React.RefObject<HTMLInputElement | null>
@@ -17,6 +18,7 @@ export function useImageCapture(): UseImageCaptureReturn {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [capturing, setCapturing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isPdf, setIsPdf] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   const handleCapture = useCallback(async (file: File) => {
@@ -24,20 +26,30 @@ export function useImageCapture(): UseImageCaptureReturn {
     setError(null)
 
     try {
-      // Compress the image
-      const compressed = await compressImage(file)
-      const url = createPreviewUrl(compressed)
+      if (file.type === 'application/pdf') {
+        // PDFs: store as-is, no compression
+        setIsPdf(true)
+        setPreviewUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev)
+          return 'pdf' // marker for PDF preview
+        })
+        setImageBlob(file)
+      } else {
+        // Images: compress as before
+        setIsPdf(false)
+        const compressed = await compressImage(file)
+        const url = createPreviewUrl(compressed)
 
-      // Clean up previous preview URL
-      setPreviewUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev)
-        return url
-      })
+        setPreviewUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev)
+          return url
+        })
 
-      setImageBlob(compressed)
+        setImageBlob(compressed)
+      }
     } catch (err) {
       console.error('Image capture error:', err)
-      setError('Kon de foto niet verwerken. Probeer opnieuw.')
+      setError('Kon het bestand niet verwerken. Probeer opnieuw.')
     } finally {
       setCapturing(false)
     }
@@ -45,10 +57,11 @@ export function useImageCapture(): UseImageCaptureReturn {
 
   const reset = useCallback(() => {
     setPreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev)
+      if (prev && prev !== 'pdf') URL.revokeObjectURL(prev)
       return null
     })
     setImageBlob(null)
+    setIsPdf(false)
     setError(null)
     if (inputRef.current) {
       inputRef.current.value = ''
@@ -64,6 +77,7 @@ export function useImageCapture(): UseImageCaptureReturn {
     previewUrl,
     capturing,
     error,
+    isPdf,
     handleCapture,
     reset,
     inputRef,
