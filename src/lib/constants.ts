@@ -1,5 +1,5 @@
 export const RECIPIENT_EMAIL = 'corneliskalma@gmail.com'
-export const APP_NAME = 'De Unie Companion App'
+export const APP_NAME = 'De Unie Form'
 export const USER_NAME = 'Laura'
 
 export const MAX_IMAGE_WIDTH = 1200

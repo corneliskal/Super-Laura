@@ -12,9 +12,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.png', 'logo.png'],
       manifest: {
-        name: 'De Unie Companion App',
-        short_name: 'De Unie',
-        description: 'Bonnetjes fotograferen, bewaren en indienen',
+        name: 'De Unie Form',
+        short_name: 'De Unie Form',
+        description: 'Bonnetjes, reiskosten en facturen beheren en indienen',
         theme_color: '#7c3aed',
         background_color: '#f5f3ff',
         display: 'standalone',

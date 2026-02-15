@@ -40,7 +40,7 @@ export function HomePage() {
       <div className="text-center pt-4 pb-2">
         <img
           src="/logo.png"
-          alt="Super-Laura"
+          alt="De Unie Form"
           className="h-32 mx-auto drop-shadow-lg object-contain"
         />
       </div>

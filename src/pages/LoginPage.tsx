@@ -49,7 +49,7 @@ export function LoginPage() {
         <div className="text-center">
           <img
             src="/logo.png"
-            alt="Super-Laura"
+            alt="De Unie Form"
             className="h-24 mx-auto drop-shadow-lg object-contain"
           />
           <h1 className="mt-3 text-xl font-bold text-gray-900">{APP_NAME}</h1>
