@@ -2,9 +2,14 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    // Receipt photos - alleen ingelogde gebruikers
-    match /receipt-photos/{allPaths=**} {
-      allow read, write: if request.auth != null;
+    // Receipt photos - new path with per-user isolation
+    match /receipt-photos/users/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Receipt photos - legacy path (read + delete only, no new uploads)
+    match /receipt-photos/{year}/{month}/{file} {
+      allow read, delete: if request.auth != null;
     }
 
     // Avatar photos - publiek leesbaar, schrijven door eigenaar
