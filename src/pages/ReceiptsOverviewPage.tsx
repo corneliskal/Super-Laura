@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Search, SlidersHorizontal, PlusCircle, Send, Loader2, CheckCircle } from 'lucide-react'
+import { Search, SlidersHorizontal, PlusCircle, Send, Loader2, CheckCircle, Images, X } from 'lucide-react'
 import { useReceipts } from '@/hooks/useReceipts'
+import { useBatchUpload } from '@/hooks/useBatchUpload'
 import { useToast } from '@/components/ui/Toast'
 import { ReceiptCard } from '@/components/receipt/ReceiptCard'
 import { MonthPicker } from '@/components/submission/MonthPicker'
@@ -26,6 +27,8 @@ export function ReceiptsOverviewPage() {
   const [submitting, setSubmitting] = useState(false)
   const [submittedReceipts, setSubmittedReceipts] = useState<Receipt[]>([])
   const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const batchInputRef = useRef<HTMLInputElement>(null)
+  const batch = useBatchUpload()
 
   useEffect(() => {
     fetchReceipts(month, year)
@@ -83,6 +86,21 @@ export function ReceiptsOverviewPage() {
     handleSubmit()
   }
 
+  const handleBatchFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    // On mobile, file.type can be empty - accept all files from image picker
+    const allFiles = Array.from(files)
+    e.target.value = ''
+
+    if (allFiles.length === 0) return
+
+    batch.startBatch(allFiles, month, year, () => {
+      fetchReceipts(month, year)
+    })
+  }
+
   // Only show non-submitted in the main list
   const pendingReceipts = receipts.filter((r) => !r.is_submitted)
 
@@ -109,17 +127,81 @@ export function ReceiptsOverviewPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-gray-900">Bonnetjes</h2>
-        <Link
-          to="/nieuw"
-          state={{ month, year }}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 transition-colors shadow-sm"
-        >
-          <PlusCircle size={16} />
-          Nieuw
-        </Link>
+        <div className="flex items-center gap-2">
+          <input
+            ref={batchInputRef}
+            type="file"
+            accept="image/*,image/heic,image/heif"
+            multiple
+            onChange={handleBatchFiles}
+            className="hidden"
+          />
+          <button
+            onClick={() => batchInputRef.current?.click()}
+            disabled={batch.active}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            <Images size={16} />
+            Meerdere
+          </button>
+          <Link
+            to="/nieuw"
+            state={{ month, year }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 transition-colors shadow-sm"
+          >
+            <PlusCircle size={16} />
+            Nieuw
+          </Link>
+        </div>
       </div>
 
       <MonthPicker month={month} year={year} onChange={handleMonthChange} />
+
+      {/* Batch upload progress */}
+      {batch.items.length > 0 && (
+        <div className={`rounded-xl p-4 border ${
+          batch.active
+            ? 'bg-amber-50 border-amber-200'
+            : batch.failed > 0
+              ? 'bg-red-50 border-red-200'
+              : 'bg-green-50 border-green-200'
+        }`}>
+          <div className="flex items-center justify-between mb-2">
+            <span className={`text-sm font-medium ${
+              batch.active ? 'text-amber-800' : batch.failed > 0 ? 'text-red-800' : 'text-green-800'
+            }`}>
+              {batch.active
+                ? `${batch.completed} van ${batch.total} verwerkt...`
+                : batch.failed > 0
+                  ? `${batch.completed} geslaagd, ${batch.failed} mislukt`
+                  : `${batch.completed} bonnetjes toegevoegd!`
+              }
+            </span>
+            {!batch.active && (
+              <button onClick={batch.dismiss} className="p-1 hover:bg-black/5 rounded">
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          {/* Progress bar */}
+          <div className="w-full h-1.5 bg-black/10 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                batch.active ? 'bg-amber-500' : batch.failed > 0 ? 'bg-red-500' : 'bg-green-500'
+              }`}
+              style={{ width: `${batch.total > 0 ? ((batch.completed + batch.failed) / batch.total) * 100 : 0}%` }}
+            />
+          </div>
+          {/* Error details */}
+          {batch.failed > 0 && (
+            <div className="mt-2 space-y-1">
+              {batch.items.filter(i => i.status === 'error').map(i => (
+                <p key={i.id} className="text-xs text-red-600">{i.fileName}: {i.error}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Search + filter */}
       <div className="space-y-2">
