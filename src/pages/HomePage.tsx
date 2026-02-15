@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Receipt, Car } from 'lucide-react'
+import { Receipt, Car, FileSpreadsheet } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 // GEDEACTIVEERD: Superheld Avatar feature (geparkeerd)
 // import { useSettings } from '@/hooks/useSettings'
@@ -20,6 +20,14 @@ const tiles = [
     icon: Car,
     gradient: 'from-emerald-500 to-emerald-600',
     iconBg: 'bg-emerald-400/30',
+  },
+  {
+    to: '/management-fee',
+    label: 'Management Fee',
+    description: 'Maandelijkse factuur versturen',
+    icon: FileSpreadsheet,
+    gradient: 'from-amber-500 to-amber-600',
+    iconBg: 'bg-amber-400/30',
   },
 ]
 

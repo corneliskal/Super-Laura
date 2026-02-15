@@ -15,6 +15,8 @@ import { AddTravelPage } from '@/pages/AddTravelPage'
 import { TravelDetailPage } from '@/pages/TravelDetailPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { VerifyEmailPage } from '@/pages/VerifyEmailPage'
+import { ManagementFeeOverviewPage } from '@/pages/ManagementFeeOverviewPage'
+import { ManagementFeeSetupPage } from '@/pages/ManagementFeeSetupPage'
 
 export default function App() {
   return (
@@ -44,6 +46,10 @@ export default function App() {
                 <Route path="/reiskosten" element={<TravelOverviewPage />} />
                 <Route path="/reiskosten/nieuw" element={<AddTravelPage />} />
                 <Route path="/reiskosten/:id" element={<TravelDetailPage />} />
+
+                {/* Management Fee */}
+                <Route path="/management-fee" element={<ManagementFeeOverviewPage />} />
+                <Route path="/management-fee/instellen" element={<ManagementFeeSetupPage />} />
 
                 {/* Instellingen (Settings) */}
                 <Route path="/instellingen" element={<SettingsPage />} />

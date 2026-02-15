@@ -1,10 +1,11 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { Home, FileText, Car } from 'lucide-react'
+import { Home, FileText, Car, FileSpreadsheet } from 'lucide-react'
 
 const navItems = [
   { to: '/', label: 'Home', icon: Home, exact: true },
   { to: '/bonnetjes', label: 'Bonnetjes', icon: FileText, prefix: '/bonnetjes' },
   { to: '/reiskosten', label: 'Reiskosten', icon: Car, prefix: '/reiskosten' },
+  { to: '/management-fee', label: 'Factuur', icon: FileSpreadsheet, prefix: '/management-fee' },
 ]
 
 export function BottomNav() {

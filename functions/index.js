@@ -1219,3 +1219,374 @@ async function generateTravelPdf(expenses, month, year, monthName, employeeName 
   doc.end();
   return bufferPromise;
 }
+
+// =============================================================
+// analyzeInvoiceTemplate — Extract fields from a sample invoice PDF using Gemini
+// =============================================================
+exports.analyzeInvoiceTemplate = functions
+  .region("europe-west1")
+  .runWith({ timeoutSeconds: 120, memory: "512MB" })
+  .https.onRequest((req, res) => {
+    handleCors(req, res, async (req, res) => {
+      if (req.method !== "POST") {
+        res.status(405).json({ error: "Method not allowed" });
+        return;
+      }
+
+      const decodedToken = await verifyAuth(req);
+      if (!decodedToken) {
+        res.status(401).json({ error: "Niet ingelogd" });
+        return;
+      }
+
+      try {
+        const { fileBase64, mimeType } = req.body;
+        if (!fileBase64) {
+          res.status(400).json({ error: "fileBase64 is required" });
+          return;
+        }
+
+        const apiKey = getConfig("GEMINI_API_KEY");
+        if (!apiKey) {
+          res.status(500).json({ error: "Gemini API key not configured" });
+          return;
+        }
+
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+        const prompt = `Analyseer deze factuur en extraheer ALLE gegevens in het volgende JSON-formaat.
+Let op: dit is een Nederlandse factuur. Zoek naar alle velden, ook in de footer/voettekst.
+
+{
+  "companyName": "naam van het bedrijf dat de factuur stuurt (afzender)",
+  "companyAddress": "volledig adres van afzender (straat + nummer, postcode + plaats)",
+  "companyPhone": "telefoonnummer afzender",
+  "companyIban": "IBAN van afzender",
+  "companyKvk": "KvK-nummer",
+  "companyBtwNr": "BTW-nummer",
+  "companyBicCode": "BIC code",
+  "companyFooterName": "bedrijfsnaam zoals in de footer staat (kan afwijken van kop)",
+  "recipientName": "naam van de ontvanger",
+  "recipientAttention": "t.a.v. regel (indien aanwezig)",
+  "recipientAddress": "volledig adres ontvanger",
+  "descriptionPattern": "de omschrijving/beschrijving op de factuur, maar vervang de maandnaam door {month} en het jaar door {year}",
+  "btwPercentage": 21,
+  "amount": 7500.00
+}
+
+BELANGRIJK:
+- Geef ALLEEN geldige JSON terug, geen uitleg of markdown
+- Als een veld niet gevonden wordt, gebruik een lege string ""
+- btwPercentage moet een nummer zijn
+- amount moet een nummer zijn (het netto bedrag exclusief BTW)
+- Bij descriptionPattern: vervang de specifieke maand door {month} en het jaar door {year}`;
+
+        const result = await model.generateContent([
+          { text: prompt },
+          {
+            inlineData: {
+              mimeType: mimeType || "application/pdf",
+              data: fileBase64,
+            },
+          },
+        ]);
+
+        const responseText = result.response.text();
+        console.log("Gemini invoice analysis raw:", responseText.substring(0, 500));
+
+        // Parse JSON from response
+        let parsed;
+        try {
+          const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            parsed = JSON.parse(jsonMatch[0]);
+          } else {
+            throw new Error("No JSON found in response");
+          }
+        } catch (parseErr) {
+          console.error("JSON parse error:", parseErr.message);
+          res.status(500).json({ error: "Kon factuur niet analyseren", raw: responseText });
+          return;
+        }
+
+        res.status(200).json({ success: true, data: parsed });
+      } catch (error) {
+        console.error("analyzeInvoiceTemplate error:", error);
+        res.status(500).json({ error: "Analyse mislukt: " + error.message });
+      }
+    });
+  });
+
+// =============================================================
+// submitManagementFee — Generate invoice PDF and send via email
+// =============================================================
+exports.submitManagementFee = functions
+  .region("europe-west1")
+  .runWith({ timeoutSeconds: 120, memory: "512MB" })
+  .https.onRequest((req, res) => {
+    handleCors(req, res, async (req, res) => {
+      if (req.method !== "POST") {
+        res.status(405).json({ error: "Method not allowed" });
+        return;
+      }
+
+      const decodedToken = await verifyAuth(req);
+      if (!decodedToken) {
+        res.status(401).json({ error: "Niet ingelogd" });
+        return;
+      }
+      const userId = decodedToken.uid;
+
+      try {
+        const { month, year, amount } = req.body;
+        if (!month || !year || amount === undefined) {
+          res.status(400).json({ error: "month, year, and amount are required" });
+          return;
+        }
+
+        // Load template from user settings
+        const templateDoc = await db.collection("users").doc(userId)
+          .collection("settings").doc("managementfee").get();
+
+        if (!templateDoc.exists) {
+          res.status(400).json({ error: "Management fee template niet geconfigureerd" });
+          return;
+        }
+
+        const template = templateDoc.data();
+        const monthName = DUTCH_MONTHS[month - 1];
+        const invoiceNumber = `${year}-${String(month).padStart(2, "0")}`;
+        const btwAmount = amount * (template.btwPercentage / 100);
+        const totalAmount = amount + btwAmount;
+
+        // Build description from pattern
+        const description = (template.descriptionPattern || "Management fee {month} {year}")
+          .replace(/\{month\}/g, monthName.toLowerCase())
+          .replace(/\{year\}/g, String(year));
+
+        // Invoice date: 25th of the month (or today if current month)
+        const now = new Date();
+        let invoiceDate;
+        if (month === now.getMonth() + 1 && year === now.getFullYear()) {
+          invoiceDate = now;
+        } else {
+          invoiceDate = new Date(year, month - 1, 25);
+        }
+
+        const invoiceData = {
+          month,
+          year,
+          monthName,
+          amount,
+          btwPercentage: template.btwPercentage,
+          btwAmount,
+          totalAmount,
+          invoiceNumber,
+          description,
+          invoiceDate,
+        };
+
+        console.log(`Generating management fee invoice ${invoiceNumber} for user ${userId}, amount: ${amount}`);
+
+        // Generate PDF
+        const pdfBuffer = await generateManagementFeePdf(template, invoiceData);
+
+        // Build filename from template
+        const fileTitle = template.fileTitle || "Factuur management fee";
+        const filename = `${fileTitle} ${monthName.toLowerCase()} ${year}.pdf`;
+
+        // Send email
+        const mail = getTransporter();
+        await mail.sendMail({
+          from: `"${getConfig('FROM_NAME') || 'De Unie'}" <${getConfig('FROM_EMAIL') || getConfig('GMAIL_EMAIL') || 'corneliskalma@gmail.com'}>`,
+          to: template.recipientEmail,
+          cc: decodedToken.email,
+          subject: `${fileTitle} ${monthName.toLowerCase()} ${year}`,
+          html: `
+            <h2>${fileTitle}</h2>
+            <p>Hierbij de factuur voor ${monthName.toLowerCase()} ${year}.</p>
+            <table style="border-collapse:collapse;margin:16px 0;">
+              <tr><td style="padding:4px 12px 4px 0;"><strong>Factuurnummer:</strong></td><td>${invoiceNumber}</td></tr>
+              <tr><td style="padding:4px 12px 4px 0;"><strong>Bedrag excl. BTW:</strong></td><td>${formatEuroInvoice(amount)}</td></tr>
+              <tr><td style="padding:4px 12px 4px 0;"><strong>BTW ${template.btwPercentage}%:</strong></td><td>${formatEuroInvoice(btwAmount)}</td></tr>
+              <tr><td style="padding:4px 12px 4px 0;"><strong>Totaal:</strong></td><td>${formatEuroInvoice(totalAmount)}</td></tr>
+            </table>
+            <p style="color:#888;font-size:12px;">Verstuurd via De Unie Companion App</p>
+          `,
+          attachments: [
+            {
+              filename,
+              content: pdfBuffer,
+            },
+          ],
+        });
+
+        console.log(`Management fee email sent to ${template.recipientEmail} for ${monthName} ${year}`);
+
+        // Save invoice record
+        await db.collection("management_fee_invoices").add({
+          userId,
+          month,
+          year,
+          amount,
+          btwPercentage: template.btwPercentage,
+          btwAmount,
+          totalAmount,
+          invoiceNumber,
+          status: "sent",
+          sentAt: admin.firestore.FieldValue.serverTimestamp(),
+          created_at: admin.firestore.FieldValue.serverTimestamp(),
+          updated_at: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        res.status(200).json({
+          success: true,
+          message: `Factuur ${invoiceNumber} verstuurd naar ${template.recipientEmail}`,
+          invoiceNumber,
+          totalAmount,
+        });
+      } catch (error) {
+        console.error("submitManagementFee error:", error);
+        res.status(500).json({ error: "Verzenden mislukt: " + error.message });
+      }
+    });
+  });
+
+// =============================================================
+// Helper: Generate management fee invoice PDF
+// =============================================================
+async function generateManagementFeePdf(template, invoiceData) {
+  const doc = new PDFDocument({
+    size: "A4",
+    margins: { top: 50, bottom: 50, left: 50, right: 50 },
+  });
+  const bufferPromise = pdfToBuffer(doc);
+
+  const PAGE_WIDTH = 595.28;
+  const LEFT = 50;
+  const RIGHT = PAGE_WIDTH - 50;
+
+  // --- Company header (right-aligned, top) ---
+  doc.font("Helvetica-Bold").fontSize(14);
+  doc.text(template.companyName || "", LEFT, 50, { width: RIGHT - LEFT, align: "right" });
+
+  doc.font("Helvetica").fontSize(9);
+  let headerY = 72;
+  if (template.companyAddress) {
+    // Split address into lines by comma or newline
+    const addressLines = template.companyAddress.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+    for (const line of addressLines) {
+      doc.text(line, LEFT, headerY, { width: RIGHT - LEFT, align: "right" });
+      headerY += 14;
+    }
+  }
+  if (template.companyPhone) {
+    headerY += 2;
+    doc.text(template.companyPhone, LEFT, headerY, { width: RIGHT - LEFT, align: "right" });
+    headerY += 14;
+  }
+
+  // --- Recipient (left-aligned) ---
+  let y = 130;
+  doc.font("Helvetica").fontSize(10);
+  if (template.recipientName) {
+    doc.text(template.recipientName, LEFT, y);
+    y += 15;
+  }
+  if (template.recipientAttention) {
+    const tav = template.recipientAttention.toLowerCase().startsWith("t.a.v")
+      ? template.recipientAttention
+      : `t.a.v. ${template.recipientAttention}`;
+    doc.text(tav, LEFT, y);
+    y += 15;
+  }
+  if (template.recipientAddress) {
+    const addrLines = template.recipientAddress.split(",").map(s => s.trim());
+    for (const line of addrLines) {
+      doc.text(line, LEFT, y);
+      y += 15;
+    }
+  }
+
+  // --- Date and invoice number ---
+  y += 20;
+  const dateStr = formatDutchDate(invoiceData.invoiceDate);
+  doc.font("Helvetica").fontSize(10);
+  doc.text(dateStr, LEFT, y);
+  y += 15;
+  doc.text(`Factuurnummer ${invoiceData.invoiceNumber}`, LEFT, y);
+
+  // --- Description ---
+  y += 30;
+  doc.font("Helvetica").fontSize(10);
+  doc.text(invoiceData.description, LEFT, y, { width: RIGHT - LEFT });
+
+  // --- Amount table ---
+  y += 40;
+  const amountCol = 400;
+
+  // Net amount
+  doc.font("Helvetica").fontSize(10);
+  const descLabel = (template.descriptionPattern || "Management fee")
+    .replace(/\{month\}.*$/i, "").replace(/maand\s*$/i, "").trim() || "Management fee";
+  doc.text(descLabel, LEFT, y);
+  doc.text(formatEuroInvoice(invoiceData.amount), amountCol, y, { width: RIGHT - amountCol, align: "right" });
+  y += 18;
+
+  // BTW
+  doc.text(`BTW ${invoiceData.btwPercentage}%`, LEFT, y);
+  doc.text(formatEuroInvoice(invoiceData.btwAmount), amountCol, y, { width: RIGHT - amountCol, align: "right" });
+  y += 5;
+
+  // Separator line
+  doc.moveTo(LEFT, y + 8).lineTo(RIGHT, y + 8).lineWidth(0.5).stroke();
+  y += 18;
+
+  // Total
+  doc.font("Helvetica-Bold").fontSize(10);
+  doc.text("Totaal", LEFT, y);
+  doc.text(formatEuroInvoice(invoiceData.totalAmount), amountCol, y, { width: RIGHT - amountCol, align: "right" });
+
+  // --- Company footer info ---
+  y += 50;
+  doc.font("Helvetica").fontSize(9);
+  if (template.companyFooterName) {
+    doc.text(template.companyFooterName, LEFT, y);
+    y += 14;
+  }
+  if (template.companyIban) {
+    doc.text(template.companyIban, LEFT, y);
+    y += 20;
+  }
+
+  // --- Bottom footer bar ---
+  const footerY = 770;
+  doc.moveTo(LEFT, footerY).lineTo(RIGHT, footerY).lineWidth(1).stroke();
+  doc.font("Helvetica").fontSize(7);
+  const footerParts = [];
+  if (template.companyIban) footerParts.push(template.companyIban);
+  if (template.companyKvk) footerParts.push(`KvK ${template.companyKvk}`);
+  if (template.companyBtwNr) footerParts.push(`BTW ${template.companyBtwNr}`);
+  if (template.companyBicCode) footerParts.push(`BIC ${template.companyBicCode}`);
+  doc.text(footerParts.join("   |   "), LEFT, footerY + 6, { width: RIGHT - LEFT, align: "center" });
+
+  doc.end();
+  return bufferPromise;
+}
+
+// Format euro for invoices: € 7.500,00 (Dutch format with thousands separator)
+function formatEuroInvoice(amount) {
+  const parts = amount.toFixed(2).split(".");
+  const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return `\u20AC ${intPart},${parts[1]}`;
+}
+
+// Format a date in Dutch: "25 januari 2026"
+function formatDutchDate(date) {
+  const d = new Date(date);
+  const day = d.getDate();
+  const monthName = DUTCH_MONTHS[d.getMonth()].toLowerCase();
+  const year = d.getFullYear();
+  return `${day} ${monthName} ${year}`;
+}
