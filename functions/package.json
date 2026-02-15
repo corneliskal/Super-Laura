@@ -1,6 +1,6 @@
 {
-  "name": "super-laura-functions",
-  "description": "Cloud Functions for Super-Laura Bonnetjes App",
+  "name": "de-unie-form-functions",
+  "description": "Cloud Functions for De Unie Form App",
   "scripts": {
     "serve": "firebase emulators:start --only functions",
     "shell": "firebase functions:shell",
