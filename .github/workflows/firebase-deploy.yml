@@ -1,0 +1,32 @@
+name: Deploy to Firebase
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Frontend build
+      - run: npm ci
+      - run: npm run build
+
+      # Functions dependencies
+      - run: cd functions && npm ci
+
+      # Write service account key to file
+      - run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}' > $RUNNER_TEMP/sa-key.json
+
+      # Deploy hosting, functions, firestore rules, storage rules
+      - run: npx firebase-tools deploy --project super-laura-fb40a
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa-key.json
