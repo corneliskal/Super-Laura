@@ -10,13 +10,13 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.png', 'logo.png'],
+      includeAssets: ['favicon.png', 'favicon.svg', 'logo.png'],
       manifest: {
         name: 'De Unie Form',
         short_name: 'De Unie Form',
         description: 'Bonnetjes, reiskosten en facturen beheren en indienen',
-        theme_color: '#7c3aed',
-        background_color: '#f5f3ff',
+        theme_color: '#0D7377',
+        background_color: '#f0fdfa',
         display: 'standalone',
         orientation: 'portrait',
         lang: 'nl',
