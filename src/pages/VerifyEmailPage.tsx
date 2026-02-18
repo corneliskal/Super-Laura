@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { sendVerificationEmail } from '@/lib/emailVerification'
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { APP_NAME } from '@/lib/constants'
+import { BrandLogoStacked } from '@/components/BrandLogo'
 
 export function VerifyEmailPage() {
   const { user, logout } = useAuth()
@@ -93,15 +93,10 @@ export function VerifyEmailPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-6">
-        {/* Logo + App name */}
+        {/* Brand logo */}
         <div className="text-center">
-          <img
-            src="/logo.png"
-            alt="Logo"
-            className="h-24 mx-auto drop-shadow-lg object-contain"
-          />
-          <h1 className="mt-3 text-xl font-bold text-gray-900">{APP_NAME}</h1>
-          <p className="text-gray-500 text-sm mt-1">Bevestig je e-mailadres</p>
+          <BrandLogoStacked iconSize={40} />
+          <p className="text-uf-slate-light text-sm mt-3">Bevestig je e-mailadres</p>
         </div>
 
         {/* Info card */}
