@@ -1,7 +1,7 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Home, LogOut, Settings } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-import { APP_NAME } from '@/lib/constants'
+import { BrandLogoHorizontal } from '@/components/BrandLogo'
 
 export function Header() {
   const location = useLocation()
@@ -15,11 +15,11 @@ export function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-40 bg-primary-600 text-white shadow-md">
+    <header className="sticky top-0 z-40 bg-gradient-to-r from-uf-teal to-uf-teal-dark text-white shadow-md">
       <div className="flex items-center h-14 px-4 max-w-lg mx-auto">
-        {/* Left side */}
+        {/* Left: brand logo or home button */}
         <div className="flex items-center gap-1">
-          {!isHome && (
+          {!isHome ? (
             <button
               onClick={() => navigate('/')}
               className="p-2 -ml-2 rounded-lg hover:bg-white/10 transition-colors"
@@ -27,11 +27,14 @@ export function Header() {
             >
               <Home size={20} />
             </button>
+          ) : (
+            <BrandLogoHorizontal />
           )}
         </div>
-        <h1 className="flex-1 text-center text-lg font-bold tracking-tight">
-          {APP_NAME}
-        </h1>
+
+        <div className="flex-1" />
+
+        {/* Right side */}
         <div className="flex items-center gap-1">
           {isHome && (
             <button

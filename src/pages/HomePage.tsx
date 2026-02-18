@@ -1,33 +1,32 @@
 import { Link } from 'react-router-dom'
 import { Receipt, Car, FileSpreadsheet } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-// GEDEACTIVEERD: Superheld Avatar feature (geparkeerd)
-// import { useSettings } from '@/hooks/useSettings'
+import { BrandLogoStacked } from '@/components/BrandLogo'
 
 const tiles = [
   {
     to: '/bonnetjes',
     label: 'Bonnetjes',
-    description: 'Foto\'s van bonnen & facturen',
+    description: "Foto's van bonnen & facturen",
     icon: Receipt,
-    gradient: 'from-blue-500 to-blue-600',
-    iconBg: 'bg-blue-400/30',
+    iconColor: 'text-uf-teal',
+    iconBg: 'bg-primary-50',
   },
   {
     to: '/reiskosten',
     label: 'Reiskosten',
     description: 'Reisdeclaraties & km-vergoeding',
     icon: Car,
-    gradient: 'from-emerald-500 to-emerald-600',
-    iconBg: 'bg-emerald-400/30',
+    iconColor: 'text-uf-teal',
+    iconBg: 'bg-primary-50',
   },
   {
     to: '/management-fee',
     label: 'Management Fee',
     description: 'Maandelijkse factuur versturen',
     icon: FileSpreadsheet,
-    gradient: 'from-amber-500 to-amber-600',
-    iconBg: 'bg-amber-400/30',
+    iconColor: 'text-uf-amber',
+    iconBg: 'bg-amber-50',
   },
 ]
 
@@ -36,13 +35,9 @@ export function HomePage() {
 
   return (
     <div className="p-4 space-y-6">
-      {/* Logo */}
-      <div className="text-center pt-4 pb-2">
-        <img
-          src="/logo.png"
-          alt="De Unie Form"
-          className="h-32 mx-auto drop-shadow-lg object-contain"
-        />
+      {/* Brand logo */}
+      <div className="pt-4 pb-2">
+        <BrandLogoStacked iconSize={48} />
       </div>
 
       {/* Tiles */}
@@ -51,22 +46,15 @@ export function HomePage() {
           <Link
             key={tile.to}
             to={tile.to}
-            className={`relative overflow-hidden bg-gradient-to-br ${tile.gradient} rounded-2xl p-6 text-white shadow-lg hover:shadow-xl active:scale-[0.98] transition-all`}
+            className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200 hover:shadow-md active:scale-[0.98] transition-all"
           >
-            {/* Background icon */}
-            <tile.icon
-              size={100}
-              className="absolute -right-3 -bottom-3 opacity-10"
-              strokeWidth={1}
-            />
-            {/* Content */}
-            <div className="relative flex items-center gap-4">
+            <div className="flex items-center gap-4">
               <div className={`w-14 h-14 ${tile.iconBg} rounded-2xl flex items-center justify-center`}>
-                <tile.icon size={28} />
+                <tile.icon size={28} className={tile.iconColor} strokeWidth={1.5} />
               </div>
               <div>
-                <h3 className="text-xl font-bold">{tile.label}</h3>
-                <p className="text-white/80 text-sm mt-0.5">{tile.description}</p>
+                <h3 className="text-xl font-bold text-uf-slate">{tile.label}</h3>
+                <p className="text-uf-slate-light text-sm mt-0.5">{tile.description}</p>
               </div>
             </div>
           </Link>
@@ -75,7 +63,7 @@ export function HomePage() {
 
       {/* Subtle email display */}
       {user?.email && (
-        <p className="text-center text-xs text-gray-400 pt-2">
+        <p className="text-center text-xs text-uf-warm-gray pt-2">
           {user.email}
         </p>
       )}
