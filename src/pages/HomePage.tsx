@@ -61,12 +61,15 @@ export function HomePage() {
         ))}
       </div>
 
-      {/* Subtle email display */}
-      {user?.email && (
-        <p className="text-center text-xs text-uf-warm-gray pt-2">
-          {user.email}
-        </p>
-      )}
+      {/* Subtle email + Corkapps badge */}
+      <div className="flex flex-col items-center gap-2 pt-2">
+        {user?.email && (
+          <p className="text-xs text-uf-warm-gray">
+            {user.email}
+          </p>
+        )}
+        <img src="/corkapps-logo.svg" alt="Corkapps" className="h-4 opacity-40" />
+      </div>
     </div>
   )
 }

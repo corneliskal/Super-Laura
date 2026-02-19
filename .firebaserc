@@ -1,5 +1,17 @@
 {
   "projects": {
     "default": "super-laura-fb40a"
+  },
+  "targets": {
+    "super-laura-fb40a": {
+      "hosting": {
+        "production": [
+          "super-laura-fb40a"
+        ],
+        "dev": [
+          "super-laura-dev"
+        ]
+      }
+    }
   }
 }

@@ -16,8 +16,8 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-40 bg-gradient-to-r from-uf-teal to-uf-teal-dark text-white shadow-md">
-      <div className="flex items-center h-14 px-4 max-w-lg mx-auto">
-        {/* Left: brand logo or home button */}
+      <div className="relative flex items-center h-14 px-4 max-w-lg mx-auto">
+        {/* Left */}
         <div className="flex items-center gap-1">
           {!isHome ? (
             <button
@@ -32,9 +32,16 @@ export function Header() {
           )}
         </div>
 
+        {/* Center: logo on sub-pages */}
+        {!isHome && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <BrandLogoHorizontal />
+          </div>
+        )}
+
         <div className="flex-1" />
 
-        {/* Right side */}
+        {/* Right */}
         <div className="flex items-center gap-1">
           {isHome && (
             <button
