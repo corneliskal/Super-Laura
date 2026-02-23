@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Receipt, Car, FileSpreadsheet } from 'lucide-react'
+import { Receipt, Car, FileSpreadsheet, CreditCard } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { BrandLogoStacked } from '@/components/BrandLogo'
 
@@ -17,6 +17,14 @@ const tiles = [
     label: 'Reiskosten',
     description: 'Reisdeclaraties & km-vergoeding',
     icon: Car,
+    iconColor: 'text-uf-teal',
+    iconBg: 'bg-primary-50',
+  },
+  {
+    to: '/kaartbetalingen',
+    label: 'Kaartbetalingen',
+    description: 'Bonnetjes betalingen De Unie kaart',
+    icon: CreditCard,
     iconColor: 'text-uf-teal',
     iconBg: 'bg-primary-50',
   },

@@ -14,6 +14,7 @@ export const GENERATE_AVATAR_URL = 'https://europe-west1-super-laura-fb40a.cloud
 export const SEND_VERIFICATION_EMAIL_URL = 'https://europe-west1-super-laura-fb40a.cloudfunctions.net/sendVerificationEmail'
 export const ANALYZE_INVOICE_URL = 'https://europe-west1-super-laura-fb40a.cloudfunctions.net/analyzeInvoiceTemplate'
 export const SUBMIT_MANAGEMENT_FEE_URL = 'https://europe-west1-super-laura-fb40a.cloudfunctions.net/submitManagementFee'
+export const SUBMIT_CARD_PAYMENT_URL = 'https://europe-west1-super-laura-fb40a.cloudfunctions.net/submitCardPayment'
 
 // Travel expense constants
 export const EMPLOYEE_NAME = 'Laura Favata'

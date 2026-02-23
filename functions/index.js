@@ -1221,6 +1221,118 @@ async function generateTravelPdf(expenses, month, year, monthName, employeeName 
 }
 
 // =============================================================
+// submitCardPayment — Send a single card payment receipt via email immediately
+// =============================================================
+exports.submitCardPayment = functions
+  .region("europe-west1")
+  .runWith({ timeoutSeconds: 60, memory: "256MB" })
+  .https.onRequest((req, res) => {
+    handleCors(req, res, async (req, res) => {
+      if (req.method !== "POST") {
+        res.status(405).json({ error: "Method not allowed" });
+        return;
+      }
+
+      // Verify auth
+      const decodedToken = await verifyAuth(req);
+      if (!decodedToken) {
+        res.status(401).json({ error: "Niet ingelogd" });
+        return;
+      }
+      const userId = decodedToken.uid;
+
+      try {
+        const { receiptId } = req.body;
+        if (!receiptId) {
+          res.status(400).json({ error: "receiptId is required" });
+          return;
+        }
+
+        // Load the card payment document
+        const receiptDoc = await db.collection("card_payments").doc(receiptId).get();
+        if (!receiptDoc.exists) {
+          res.status(404).json({ error: "Bonnetje niet gevonden" });
+          return;
+        }
+
+        const receipt = receiptDoc.data();
+        if (receipt.userId !== userId) {
+          res.status(403).json({ error: "Geen toegang" });
+          return;
+        }
+
+        // Load user settings for recipient email and employee name
+        const settingsDoc = await db.collection("users").doc(userId)
+          .collection("settings").doc("profile").get();
+        const settings = settingsDoc.exists ? settingsDoc.data() : {};
+        const recipientEmail = settings.recipientEmail || RECIPIENT_EMAIL;
+        const employeeName = settings.employeeName || EMPLOYEE_NAME;
+
+        // Format the receipt date in Dutch
+        const receiptDateFormatted = formatDateDutch(receipt.receipt_date);
+        const amount = receipt.amount || 0;
+
+        console.log(`Sending card payment receipt ${receiptId} for user ${userId} to ${recipientEmail}`);
+
+        // Download receipt photo/PDF from Storage
+        const attachments = [];
+        if (receipt.photo_path) {
+          try {
+            const bucket = storage.bucket();
+            const file = bucket.file(`receipt-photos/${receipt.photo_path}`);
+            const [buffer] = await file.download();
+            const isPdf = receipt.file_type === "pdf" || receipt.photo_path.endsWith(".pdf");
+            const ext = isPdf ? "pdf" : "jpg";
+            const store = (receipt.store_name || "onbekend").replace(/[^a-zA-Z0-9]/g, "_");
+            attachments.push({
+              filename: `Bonnetje_${store}_${(receipt.receipt_date || "").replace(/-/g, "")}.${ext}`,
+              content: buffer,
+            });
+          } catch (err) {
+            console.warn(`Could not download file for receipt ${receiptId}:`, err.message);
+          }
+        }
+
+        // Build email
+        const subject = `Bonnetje Kaartbetaling De Unie pas - ${receiptDateFormatted} - ${employeeName}`;
+        const storeName = receipt.store_name || "Onbekend";
+        const description = receipt.description || "-";
+
+        const mail = getTransporter();
+        await mail.sendMail({
+          from: `"${getConfig("FROM_NAME") || "De Unie"}" <${getConfig("FROM_EMAIL") || getConfig("GMAIL_EMAIL") || "corneliskalma@gmail.com"}>`,
+          to: recipientEmail,
+          cc: decodedToken.email,
+          subject: subject,
+          html: `
+            <h2>Bonnetje Kaartbetaling De Unie pas</h2>
+            <table style="border-collapse:collapse;margin:16px 0;">
+              <tr><td style="padding:4px 12px 4px 0;"><strong>Wat:</strong></td><td>${storeName} - ${description}</td></tr>
+              <tr><td style="padding:4px 12px 4px 0;"><strong>Waar:</strong></td><td>${storeName}</td></tr>
+              <tr><td style="padding:4px 12px 4px 0;"><strong>Wanneer:</strong></td><td>${receiptDateFormatted}</td></tr>
+              <tr><td style="padding:4px 12px 4px 0;"><strong>Bedrag:</strong></td><td>${formatEuro(amount)}</td></tr>
+            </table>
+            ${receipt.notes ? `<p><strong>Notities:</strong> ${receipt.notes}</p>` : ""}
+            <p>Het bonnetje is bijgevoegd.</p>
+            <p style="color:#888;font-size:12px;">Verstuurd via Unie Forms App</p>
+          `,
+          attachments,
+        });
+
+        console.log(`Card payment email sent for receipt ${receiptId}`);
+
+        res.status(200).json({
+          success: true,
+          message: `Bonnetje verstuurd naar ${recipientEmail}`,
+        });
+      } catch (error) {
+        console.error("submitCardPayment error:", error);
+        res.status(500).json({ error: "Verzenden mislukt: " + error.message });
+      }
+    });
+  });
+
+// =============================================================
 // analyzeInvoiceTemplate — Extract fields from a sample invoice PDF using Gemini
 // =============================================================
 exports.analyzeInvoiceTemplate = functions

@@ -9,6 +9,7 @@ interface ReceiptFormProps {
   defaultYear?: number
   onSubmit: (data: ReceiptFormData) => Promise<void>
   saving: boolean
+  submitLabel?: React.ReactNode
 }
 
 function getDefaultDate(month?: number, year?: number): string {
@@ -22,7 +23,7 @@ function getDefaultDate(month?: number, year?: number): string {
   return `${year}-${String(month).padStart(2, '0')}-01`
 }
 
-export function ReceiptForm({ initialData, defaultMonth, defaultYear, onSubmit, saving }: ReceiptFormProps) {
+export function ReceiptForm({ initialData, defaultMonth, defaultYear, onSubmit, saving, submitLabel }: ReceiptFormProps) {
   const [formData, setFormData] = useState<ReceiptFormData>({
     store_name: '',
     description: '',
@@ -188,7 +189,7 @@ export function ReceiptForm({ initialData, defaultMonth, defaultYear, onSubmit, 
         disabled={!isValid || saving}
         className="w-full flex items-center justify-center gap-2 bg-primary-600 text-white font-semibold py-4 rounded-xl hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-md text-base"
       >
-        {saving ? (
+        {submitLabel ? submitLabel : saving ? (
           <>
             <Loader2 size={20} className="animate-spin" />
             Opslaan...
