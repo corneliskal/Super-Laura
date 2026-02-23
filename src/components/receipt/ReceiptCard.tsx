@@ -6,14 +6,15 @@ import { formatDateShort, formatEuro } from '@/lib/dateUtils'
 
 interface ReceiptCardProps {
   receipt: Receipt
+  basePath?: string
 }
 
-export function ReceiptCard({ receipt }: ReceiptCardProps) {
+export function ReceiptCard({ receipt, basePath = '/bonnetjes' }: ReceiptCardProps) {
   const category = CATEGORIES.find((c) => c.name === receipt.category)
 
   return (
     <Link
-      to={`/bonnetjes/${receipt.id}`}
+      to={`${basePath}/${receipt.id}`}
       className="flex items-center gap-3 bg-white rounded-xl p-3 shadow-sm border border-gray-100 hover:shadow-md transition-shadow active:scale-[0.98]"
     >
       {/* Category icon */}

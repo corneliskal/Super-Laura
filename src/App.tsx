@@ -17,6 +17,9 @@ import { SettingsPage } from '@/pages/SettingsPage'
 import { VerifyEmailPage } from '@/pages/VerifyEmailPage'
 import { ManagementFeeOverviewPage } from '@/pages/ManagementFeeOverviewPage'
 import { ManagementFeeSetupPage } from '@/pages/ManagementFeeSetupPage'
+import { CardPaymentsOverviewPage } from '@/pages/CardPaymentsOverviewPage'
+import { AddCardPaymentPage } from '@/pages/AddCardPaymentPage'
+import { CardPaymentDetailPage } from '@/pages/CardPaymentDetailPage'
 
 export default function App() {
   return (
@@ -46,6 +49,11 @@ export default function App() {
                 <Route path="/reiskosten" element={<TravelOverviewPage />} />
                 <Route path="/reiskosten/nieuw" element={<AddTravelPage />} />
                 <Route path="/reiskosten/:id" element={<TravelDetailPage />} />
+
+                {/* Kaartbetalingen (Card Payments) */}
+                <Route path="/kaartbetalingen" element={<CardPaymentsOverviewPage />} />
+                <Route path="/kaartbetalingen/nieuw" element={<AddCardPaymentPage />} />
+                <Route path="/kaartbetalingen/:id" element={<CardPaymentDetailPage />} />
 
                 {/* Management Fee */}
                 <Route path="/management-fee" element={<ManagementFeeOverviewPage />} />
