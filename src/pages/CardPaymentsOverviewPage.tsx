@@ -98,7 +98,7 @@ export function CardPaymentsOverviewPage() {
 
           <div className="space-y-2">
             {filtered.map((payment) => (
-              <ReceiptCard key={payment.id} receipt={payment} />
+              <ReceiptCard key={payment.id} receipt={payment} basePath="/kaartbetalingen" />
             ))}
           </div>
         </>
