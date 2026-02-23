@@ -17,6 +17,22 @@
       ]
     },
     {
+      "collectionGroup": "card_payments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "receipt_date", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "card_payments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "receipt_date", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "travel_expenses",
       "queryScope": "COLLECTION",
       "fields": [
