@@ -76,7 +76,7 @@ export function HomePage() {
             {user.email}
           </p>
         )}
-        <img src="/corkapps-logo.svg" alt="Corkapps" className="h-4 opacity-40" />
+        <img src="/corkapps-logo.svg" alt="Corkapps" className="h-4 opacity-40 mx-auto block" />
       </div>
     </div>
   )
